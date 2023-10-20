@@ -4,6 +4,12 @@
 
   (paper "A2")
 
+  (title_block
+    (title "IBM Channel Breakout Board")
+    (date "2023-10-20")
+    (rev "1")
+  )
+
   (lib_symbols
     (symbol "Connector:Jack-DC" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
       (property "Reference" "J" (at 0 5.334 0)
