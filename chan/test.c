@@ -30,7 +30,7 @@ int main(void)
 
     size_t count = 64;
 
-    int result = chan_test(&chan, &buf, count);
+    int result = chan_start(&chan, 0, buf, count);
 
     printf("result = %d\n", result);
 

@@ -5,7 +5,6 @@
 
 #include <real.h>
 #include <udmabuf.h>
-#include <util.h>
 
 #include "chan.h"
 
@@ -55,7 +54,7 @@ int chan_close(struct chan *chan)
     return result;
 }
 
-int chan_test(struct chan *chan, uint8_t *buf, size_t count)
+int chan_start(struct chan *chan, uint8_t ccw, uint8_t *buf, size_t count)
 {
     if (count > chan->udmabuf.size) {
         return -1;
@@ -74,8 +73,6 @@ int chan_test(struct chan *chan, uint8_t *buf, size_t count)
     while (chan->regs[REG_STATUS] & 2) {
         usleep(100);
     }
-
-    dump(chan->udmabuf.buf, count);
 
     memcpy(buf, chan->udmabuf.buf, count);
 
