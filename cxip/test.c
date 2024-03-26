@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <real.h>
+#include <util.h>
 
 #include "chan.h"
 
@@ -24,6 +25,32 @@ int main(void)
     }
 
     printf("ready\n");
+
+    uint8_t buf[64];
+
+    size_t count = 64;
+
+    int result = chan_test(&chan, &buf, count);
+
+    printf("result = %d\n", result);
+
+    dump(buf, count);
+
+    int bad_count = 0;
+
+    for (int i = 0; i < count; i++) {
+        uint8_t expected = count ^ (count - i);
+
+        if (buf[i] != expected) {
+            bad_count++;
+        }
+    }
+
+    if (bad_count == 0) {
+        printf("PASS\n");
+    } else {
+        printf("FAIL\n");
+    }
 
     chan_close(&chan);
 
