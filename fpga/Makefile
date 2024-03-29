@@ -18,13 +18,16 @@ bit: $(PROJECT).bit
 bin: $(PROJECT).bin
 xsa: $(PROJECT).xsa
 
-$(PROJECT).xpr: create_project.tcl
-	$(VIVADO) -mode batch -nojournal -nolog -source $<
-
 lint: rtl/*.v
 	for file in $^; do \
 		$(VERILATOR) -lint-only -Wall -y rtl $$file; \
 	done
+
+tests:
+	$(MAKE) -C tests
+
+$(PROJECT).xpr: create_project.tcl
+	$(VIVADO) -mode batch -nojournal -nolog -source $<
 
 $(PROJECT).runs/synth_1/$(TOP).dcp: rtl/*.v | $(PROJECT).xpr
 	echo "update_module_reference [get_ips]" > _synth.tcl
@@ -69,5 +72,6 @@ clean:
 	rm -rf $(PROJECT).{bit,bin,cache,gen,hw,ip_user_files,runs,sim,srcs,xpr,xsa}
 	rm -rf vivado*.{jou,log,str} .Xil
 	rm -rf _*.tcl
+	$(MAKE) -C tests clean
 
-.PHONY: vivado project lint synth impl bit bin xsa clean
+.PHONY: all vivado project synth impl bit bin xsa lint tests clean

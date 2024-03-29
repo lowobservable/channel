@@ -37,7 +37,6 @@ module channel (
 
     output reg [7:0] res_count
 );
-
     localparam STATE_IDLE = 0;
     localparam STATE_SELECTION_ADDRESS_OUT = 1;
     localparam STATE_SELECTION_SELECT_OUT = 2;
