@@ -9,7 +9,7 @@ all: lint tests
 
 lint: *_tb.v
 	for file in $^; do \
-		$(VERILATOR) -lint-only -Wall -y $(RTL) $$file; \
+		$(VERILATOR) -lint-only --timing -Wall -Wno-PINCONNECTEMPTY -Wno-PINMISSING -y $(RTL) $$file; \
 	done
 
 tests: $(TESTS)

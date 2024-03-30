@@ -19,7 +19,9 @@ module axi_byte_io (
 
     output reg m_axi_rready,
     input wire [63:0] m_axi_rdata,
+    // verilator lint_off UNUSEDSIGNAL
     input wire [1:0] m_axi_rresp,
+    // veriltor lint on UNUSEDSIGNAL
     input wire m_axi_rvalid,
 
     input wire m_axi_awready,
@@ -32,7 +34,9 @@ module axi_byte_io (
     output reg m_axi_wvalid,
 
     output reg m_axi_bready,
+    // verilator lint_off UNUSEDSIGNAL
     input wire [1:0] m_axi_bresp,
+    // veriltor lint on UNUSEDSIGNAL
     input wire m_axi_bvalid
 );
     initial
@@ -98,6 +102,8 @@ module axi_byte_io (
                 if (a_beat && m_axi_rready && m_axi_rvalid)
                 begin
                     m_axi_rready <= 1'b0;
+
+                    // TODO: check m_axi_rresp
                     data_read <= y_data;
                     done <= 1'b1;
 
@@ -131,6 +137,8 @@ module axi_byte_io (
                 if (a_beat && d_beat && m_axi_bready && m_axi_bvalid)
                 begin
                     m_axi_bready <= 1'b0;
+
+                    // TODO: check m_axi_bresp
                     done <= 1'b1;
 
                     state <= 0;

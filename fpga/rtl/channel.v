@@ -9,8 +9,10 @@ module channel (
     input wire [7:0] bus_in,
     output reg [7:0] bus_out,
 
-    output reg operational_out = 1, // TODO
+    output reg operational_out = 1'b1,
+    // verilator lint_off UNUSEDSIGNAL
     input wire request_in,
+    // veriloator lint on UNUSEDSIGNAL
     output reg hold_out,
     output reg select_out,
     input wire select_in,
@@ -21,7 +23,7 @@ module channel (
     input wire status_in,
     input wire service_in,
     output reg service_out,
-    output reg suppress_out,
+    output reg suppress_out = 1'b0,
 
     //
 

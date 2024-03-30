@@ -5,6 +5,22 @@
 module channel_tb;
     reg clk = 0;
 
+    wire [7:0] bus_in;
+    wire [7:0] bus_out;
+    wire operational_out;
+    wire request_in;
+    wire hold_out;
+    wire select_out;
+    wire select_in;
+    wire address_out;
+    wire operational_in;
+    wire address_in;
+    wire command_out;
+    wire status_in;
+    wire service_in;
+    wire service_out;
+    wire suppress_out;
+
     reg [7:0] channel_address;
     reg [7:0] channel_command;
     reg [7:0] channel_count;
@@ -12,12 +28,32 @@ module channel_tb;
 
     channel channel (
         .clk(clk),
+        .reset(),
+
+        .bus_in(bus_in),
+        .bus_out(bus_out),
+        .operational_out(operational_out),
+        .request_in(request_in),
+        .hold_out(hold_out),
+        .select_out(select_out),
+        .select_in(select_in),
+        .address_out(address_out),
+        .operational_in(operational_in),
+        .address_in(address_in),
+        .command_out(command_out),
+        .status_in(status_in),
+        .service_in(service_in),
+        .service_out(service_out),
+        .suppress_out(suppress_out),
 
         .address(channel_address),
         .command(channel_command),
         .count(channel_count),
         .start_strobe(channel_start_strobe)
     );
+
+    wire cu_select_out;
+    wire cu_select_in;
 
     reg cu_mock_busy = 0;
     reg [7:0] cu_mock_read_count = 0;
@@ -29,20 +65,24 @@ module channel_tb;
     ) cu (
         .clk(clk),
 
-        .bus_in(channel.bus_in),
-        .bus_out(channel.bus_out),
+        .bus_in(bus_in),
+        .bus_out(bus_out),
+        .operational_out(operational_out),
+        .request_in(request_in),
+        .hold_out(hold_out),
+        .a_select_out(select_out),
+        .a_select_in(select_in),
+        .address_out(address_out),
+        .operational_in(operational_in),
+        .address_in(address_in),
+        .command_out(command_out),
+        .status_in(status_in),
+        .service_in(service_in),
+        .service_out(service_out),
+        .suppress_out(suppress_out),
 
-        .operational_out(channel.operational_out),
-        .hold_out(channel.hold_out),
-        .a_select_out(channel.select_out),
-        .a_select_in(channel.select_in),
-        .address_out(channel.address_out),
-        .operational_in(channel.operational_in),
-        .address_in(channel.address_in),
-        .command_out(channel.command_out),
-        .status_in(channel.status_in),
-        .service_in(channel.service_in),
-        .service_out(channel.service_out),
+        .b_select_out(cu_select_out),
+        .b_select_in(cu_select_in),
 
         .mock_busy(cu_mock_busy),
         .mock_read_count(cu_mock_read_count),
@@ -52,15 +92,15 @@ module channel_tb;
     terminator terminator (
         .clk(clk),
 
-        .select_out(cu.b_select_out),
-        .select_in(cu.b_select_in)
+        .select_out(cu_select_out),
+        .select_in(cu_select_in)
     );
 
     initial
     begin
         forever
         begin
-            #1 clk <= ~clk;
+            #1 clk = ~clk;
         end
     end
 

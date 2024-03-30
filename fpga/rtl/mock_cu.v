@@ -6,11 +6,12 @@ module mock_cu (
 
     //
 
+    // verilator lint_off UNUSEDSIGNAL
     output reg [7:0] bus_in,
     input wire [7:0] bus_out,
 
     input wire operational_out,
-    output reg request_in,
+    output reg request_in = 1'b0,
     input wire hold_out,
     input wire a_select_out,
     output reg a_select_in,
@@ -25,6 +26,7 @@ module mock_cu (
 
     output reg b_select_out,
     input wire b_select_in,
+    // verilator lint_on UNUSEDSIGNAL
 
     //
 
@@ -36,7 +38,6 @@ module mock_cu (
     parameter ENABLE_SHORT_BUSY = 1;
 
     reg [7:0] state = 0;
-    reg [7:0] after_status_state = 0;
 
     reg [7:0] command;
     reg [7:0] status = 8'b0011_0000; // CE + DE
@@ -300,6 +301,11 @@ module mock_cu (
             endcase
         end
         else
+        begin
+            state <= 0;
+        end
+
+        if (reset)
         begin
             state <= 0;
         end

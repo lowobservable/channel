@@ -20,7 +20,9 @@ module axi_channel (
 
     output reg s_axi_wready,
     input wire [31:0] s_axi_wdata,
+    // verilator lint_off UNUSEDSIGNAL
     input wire [3:0] s_axi_wstrb,
+    // verilator lint_on UNUSEDSIGNAL
     input wire s_axi_wvalid,
 
     input wire s_axi_bready,
@@ -156,6 +158,7 @@ module axi_channel (
         begin
             s_axi_bresp <= 2'b00;
 
+            // TODO: should consider s_axi_wstrb
             case (awaddr)
                 REG_CONTROL:
                 begin

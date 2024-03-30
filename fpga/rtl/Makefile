@@ -4,7 +4,7 @@ all: lint
 
 lint: *.v
 	for file in $^; do \
-		$(VERILATOR) -lint-only -Wall $$file; \
+		$(VERILATOR) -lint-only -Wall -Wno-PINCONNECTEMPTY $$file; \
 	done
 
 .PHONY: all lint
