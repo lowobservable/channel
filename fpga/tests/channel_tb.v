@@ -125,7 +125,7 @@ module channel_tb;
     begin
         $display("START: test_no_cu");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -135,7 +135,7 @@ module channel_tb;
 
         #40;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         $display("END: test_no_cu");
     end
@@ -145,7 +145,7 @@ module channel_tb;
     begin
         $display("START: test_busy");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -155,7 +155,7 @@ module channel_tb;
 
         #60;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         $display("END: test_busy");
     end
@@ -165,7 +165,7 @@ module channel_tb;
     begin
         $display("START: test_read_command_cu_more");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -176,9 +176,9 @@ module channel_tb;
 
         #170;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
-        `assert_equal(channel.res_count, 0, "channel residual count should be 0");
+        `assert_equal(channel.res_count, 0, "channel residual count should be 0")
 
         $display("END: test_read_command_cu_more");
     end
@@ -188,7 +188,7 @@ module channel_tb;
     begin
         $display("START: test_read_command_cu_less");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -199,9 +199,9 @@ module channel_tb;
 
         #170;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
-        `assert_equal(channel.res_count, 10, "channel residual count should be 10");
+        `assert_equal(channel.res_count, 10, "channel residual count should be 10")
 
         $display("END: test_read_command_cu_less");
     end
@@ -211,7 +211,7 @@ module channel_tb;
     begin
         $display("START: test_write_command_cu_more");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -222,9 +222,9 @@ module channel_tb;
 
         #170;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
-        `assert_equal(channel.res_count, 0, "channel residual count should be 0");
+        `assert_equal(channel.res_count, 0, "channel residual count should be 0")
 
         $display("END: test_write_command_cu_more");
     end
@@ -234,7 +234,7 @@ module channel_tb;
     begin
         $display("START: test_write_command_cu_less");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -245,9 +245,9 @@ module channel_tb;
 
         #170;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
-        `assert_equal(channel.res_count, 10, "channel residual count should be 10");
+        `assert_equal(channel.res_count, 10, "channel residual count should be 10")
 
         $display("END: test_write_command_cu_less");
     end
@@ -257,7 +257,7 @@ module channel_tb;
     begin
         $display("START: test_nop_command");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -267,7 +267,7 @@ module channel_tb;
 
         #60;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         $display("END: test_nop_command");
     end
@@ -277,7 +277,7 @@ module channel_tb;
     begin
         $display("START: test_invalid_command");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -287,7 +287,7 @@ module channel_tb;
 
         #60;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE");
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
         $display("END: test_invalid_command");
     end
