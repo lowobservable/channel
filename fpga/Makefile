@@ -1,5 +1,4 @@
 VIVADO ?= vivado
-VERILATOR ?= verilator
 BSR ?= ~/projects/bsr/target/release/bsr
 
 PROJECT = project_1
@@ -18,9 +17,9 @@ bit: $(PROJECT).bit
 bin: $(PROJECT).bin
 xsa: $(PROJECT).xsa
 
-lint: rtl/*.v
-	for file in $^; do \
-		$(VERILATOR) -lint-only -Wall -y rtl $$file; \
+lint:
+	for dir in rtl tests; do \
+		$(MAKE) -C $$dir lint; \
 	done
 
 tests:

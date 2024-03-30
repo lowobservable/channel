@@ -1,4 +1,5 @@
 IVERILOG ?= iverilog
+VERILATOR ?= verilator
 
 RTL = ../rtl
 MACROS = assert.v
@@ -6,8 +7,10 @@ TESTS = $(patsubst %.v,%.vvp,$(wildcard *_tb.v))
 
 all: lint tests
 
-lint:
-	echo "TODO"
+lint: *_tb.v
+	for file in $^; do \
+		$(VERILATOR) -lint-only -Wall -y $(RTL) $$file; \
+	done
 
 tests: $(TESTS)
 	./run_tests.sh
