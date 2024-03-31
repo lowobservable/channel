@@ -4,6 +4,24 @@ module axi_channel (
     input wire aclk,
     input wire aresetn,
 
+    // Parallel Channel "A"...
+    input wire [7:0] a_bus_in,
+    output wire [7:0] a_bus_out,
+
+    output wire a_operational_out,
+    input wire a_request_in,
+    output wire a_hold_out,
+    output wire a_select_out,
+    input wire a_select_in,
+    output wire a_address_out,
+    input wire a_operational_in,
+    input wire a_address_in,
+    output wire a_command_out,
+    input wire a_status_in,
+    input wire a_service_in,
+    output wire a_service_out,
+    output wire a_suppress_out,
+
     // S_AXI...
     output reg s_axi_arready,
     input wire [7:0] s_axi_araddr,

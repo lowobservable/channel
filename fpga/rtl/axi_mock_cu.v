@@ -1,0 +1,202 @@
+`default_nettype none
+
+module axi_mock_cu (
+    input wire aclk,
+    input wire aresetn,
+
+    // Parallel Channel "B"...
+    output wire [7:0] b_bus_in,
+    input wire [7:0] b_bus_out,
+
+    input wire b_operational_out,
+    output wire b_request_in,
+    input wire b_hold_out,
+    input wire b_select_out,
+    output wire b_select_in,
+    input wire b_address_out,
+    output wire b_operational_in,
+    output wire b_address_in,
+    input wire b_command_out,
+    output wire b_status_in,
+    output wire b_service_in,
+    input wire b_service_out,
+    input wire b_suppress_out,
+
+    // Parallel Channel "A"...
+    output wire a_select_out,
+    input wire a_select_in,
+
+    // S_AXI...
+    output reg s_axi_arready,
+    input wire [7:0] s_axi_araddr,
+    input wire s_axi_arvalid,
+
+    input wire s_axi_rready,
+    output reg [31:0] s_axi_rdata,
+    output reg [1:0] s_axi_rresp,
+    output reg s_axi_rvalid,
+
+    output reg s_axi_awready,
+    input wire [7:0] s_axi_awaddr,
+    input wire s_axi_awvalid,
+
+    output reg s_axi_wready,
+    input wire [31:0] s_axi_wdata,
+    // verilator lint_off UNUSEDSIGNAL
+    input wire [3:0] s_axi_wstrb,
+    // verilator lint_on UNUSEDSIGNAL
+    input wire s_axi_wvalid,
+
+    input wire s_axi_bready,
+    output reg [1:0] s_axi_bresp,
+    output reg s_axi_bvalid
+);
+    localparam REG_CONTROL = 8'h00;
+
+    initial
+    begin
+        s_axi_arready = 1'b1;
+        s_axi_rvalid = 1'b0;
+
+        s_axi_awready = 1'b1;
+        s_axi_wready = 1'b1;
+        s_axi_bvalid = 1'b0;
+    end
+
+    reg mock_busy;
+    reg [7:0] mock_read_count;
+    reg [7:0] mock_write_count;
+
+    always @(posedge aclk)
+    begin
+        if (s_axi_arready && s_axi_arvalid)
+        begin
+            s_axi_rdata <= 32'b0;
+            s_axi_rresp <= 2'b00;
+
+            case (s_axi_araddr)
+                REG_CONTROL:
+                    s_axi_rdata <= { 8'b0, mock_write_count, mock_read_count, 6'b0, mock_busy, 1'b0 };
+
+                default:
+                    s_axi_rresp <= 2'b10; // SLVERR
+            endcase
+
+            s_axi_rvalid <= 1'b1;
+        end
+        else if (s_axi_rready && s_axi_rvalid)
+        begin
+            s_axi_rdata <= 32'b0;
+            s_axi_rresp <= 2'b00;
+            s_axi_rvalid <= 1'b0;
+        end
+
+        s_axi_arready <= !s_axi_rvalid;
+
+        if (!aresetn)
+        begin
+            s_axi_arready <= 1'b1;
+            s_axi_rdata <= 32'b0;
+            s_axi_rresp <= 2'b00;
+            s_axi_rvalid <= 1'b0;
+        end
+    end
+
+    reg [7:0] awaddr;
+    reg awaddr_full;
+    reg [31:0] wdata;
+    reg wdata_full;
+
+    always @(posedge aclk)
+    begin
+        if (s_axi_awready && s_axi_awvalid)
+        begin
+            awaddr <= s_axi_awaddr;
+            awaddr_full <= 1'b1;
+
+            // We can't accept anything more until the write is complete.
+            s_axi_awready <= 1'b0;
+        end
+
+        if (s_axi_wready && s_axi_wvalid)
+        begin
+            wdata <= s_axi_wdata;
+            wdata_full <= 1'b1;
+
+            // We can't accept anything more until the write is complete.
+            s_axi_wready <= 1'b0;
+        end
+
+        if (awaddr_full && wdata_full)
+        begin
+            s_axi_bresp <= 2'b00;
+
+            // TODO: should consider s_axi_wstrb
+            case (awaddr)
+                REG_CONTROL:
+                begin
+                    mock_busy <= wdata[1];
+                    mock_read_count <= wdata[15:8];
+                    mock_write_count <= wdata[23:16];
+                end
+
+                default:
+                    s_axi_bresp <= 2'b10; // SLVERR
+            endcase
+
+            s_axi_bvalid <= 1'b1;
+
+            awaddr_full <= 1'b0;
+            wdata_full <= 1'b0;
+        end
+
+        if (s_axi_bready && s_axi_bvalid)
+        begin
+            s_axi_awready <= 1'b1;
+            s_axi_wready <= 1'b1;
+
+            s_axi_bresp <= 2'b00;
+            s_axi_bvalid <= 1'b0;
+        end
+
+        if (!aresetn)
+        begin
+            awaddr_full <= 1'b0;
+            wdata_full <= 1'b0;
+
+            s_axi_awready <= 1'b1;
+            s_axi_wready <= 1'b1;
+            s_axi_bresp <= 2'b00;
+            s_axi_bvalid <= 1'b0;
+        end
+    end
+
+    mock_cu mock_cu (
+        .clk(aclk),
+        .reset(~aresetn),
+
+        .b_bus_in(b_bus_in),
+        .b_bus_out(b_bus_out),
+
+        .b_operational_out(b_operational_out),
+        .b_request_in(b_request_in),
+        .b_hold_out(b_hold_out),
+        .b_select_out(b_select_out),
+        .b_select_in(b_select_in),
+        .b_address_out(b_address_out),
+        .b_operational_in(b_operational_in),
+        .b_address_in(b_address_in),
+        .b_command_out(b_command_out),
+        .b_status_in(b_status_in),
+        .b_service_in(b_service_in),
+        .b_service_out(b_service_out),
+        .b_suppress_out(b_suppress_out),
+
+        .a_select_out(a_select_out),
+        .a_select_in(a_select_in),
+
+        .mock_busy(mock_busy),
+        .mock_read_count(mock_read_count),
+        .mock_write_count(mock_write_count)
+    );
+endmodule
