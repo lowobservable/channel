@@ -15,7 +15,7 @@ lint: *_tb.v
 tests: $(TESTS)
 	./run_tests.sh
 
-channel_tb.vvp: channel_tb.v $(RTL)/channel.v $(RTL)/mock_cu.v $(RTL)/terminator.v $(MACROS)
+channel_tb.vvp: channel_tb.v $(RTL)/channel.v $(RTL)/mock_cu.v $(MACROS)
 
 %_tb.vvp:
 	$(IVERILOG) -o $@ $^

@@ -30,21 +30,21 @@ module channel_tb;
         .clk(clk),
         .reset(),
 
-        .bus_in(bus_in),
-        .bus_out(bus_out),
-        .operational_out(operational_out),
-        .request_in(request_in),
-        .hold_out(hold_out),
-        .select_out(select_out),
-        .select_in(select_in),
-        .address_out(address_out),
-        .operational_in(operational_in),
-        .address_in(address_in),
-        .command_out(command_out),
-        .status_in(status_in),
-        .service_in(service_in),
-        .service_out(service_out),
-        .suppress_out(suppress_out),
+        .a_bus_in(bus_in),
+        .a_bus_out(bus_out),
+        .a_operational_out(operational_out),
+        .a_request_in(request_in),
+        .a_hold_out(hold_out),
+        .a_select_out(select_out),
+        .a_select_in(select_in),
+        .a_address_out(address_out),
+        .a_operational_in(operational_in),
+        .a_address_in(address_in),
+        .a_command_out(command_out),
+        .a_status_in(status_in),
+        .a_service_in(service_in),
+        .a_service_out(service_out),
+        .a_suppress_out(suppress_out),
 
         .address(channel_address),
         .command(channel_command),
@@ -52,8 +52,7 @@ module channel_tb;
         .start_strobe(channel_start_strobe)
     );
 
-    wire cu_select_out;
-    wire cu_select_in;
+    wire terminator;
 
     reg cu_mock_busy = 0;
     reg [7:0] cu_mock_read_count = 0;
@@ -65,35 +64,28 @@ module channel_tb;
     ) cu (
         .clk(clk),
 
-        .bus_in(bus_in),
-        .bus_out(bus_out),
-        .operational_out(operational_out),
-        .request_in(request_in),
-        .hold_out(hold_out),
-        .a_select_out(select_out),
-        .a_select_in(select_in),
-        .address_out(address_out),
-        .operational_in(operational_in),
-        .address_in(address_in),
-        .command_out(command_out),
-        .status_in(status_in),
-        .service_in(service_in),
-        .service_out(service_out),
-        .suppress_out(suppress_out),
+        .b_bus_in(bus_in),
+        .b_bus_out(bus_out),
+        .b_operational_out(operational_out),
+        .b_request_in(request_in),
+        .b_hold_out(hold_out),
+        .b_select_out(select_out),
+        .b_select_in(select_in),
+        .b_address_out(address_out),
+        .b_operational_in(operational_in),
+        .b_address_in(address_in),
+        .b_command_out(command_out),
+        .b_status_in(status_in),
+        .b_service_in(service_in),
+        .b_service_out(service_out),
+        .b_suppress_out(suppress_out),
 
-        .b_select_out(cu_select_out),
-        .b_select_in(cu_select_in),
+        .a_select_out(terminator),
+        .a_select_in(terminator),
 
         .mock_busy(cu_mock_busy),
         .mock_read_count(cu_mock_read_count),
         .mock_write_count(cu_mock_write_count)
-    );
-
-    terminator terminator (
-        .clk(clk),
-
-        .select_out(cu_select_out),
-        .select_in(cu_select_in)
     );
 
     initial

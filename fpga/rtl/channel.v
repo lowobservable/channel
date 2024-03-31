@@ -4,29 +4,27 @@ module channel (
     input wire clk,
     input wire reset,
 
-    //
+    // Parallel Channel "A"...
+    input wire [7:0] a_bus_in,
+    output reg [7:0] a_bus_out,
 
-    input wire [7:0] bus_in,
-    output reg [7:0] bus_out,
-
-    output reg operational_out = 1'b1,
+    output reg a_operational_out = 1'b1,
     // verilator lint_off UNUSEDSIGNAL
-    input wire request_in,
+    input wire a_request_in,
     // veriloator lint on UNUSEDSIGNAL
-    output reg hold_out,
-    output reg select_out,
-    input wire select_in,
-    output reg address_out,
-    input wire operational_in,
-    input wire address_in,
-    output reg command_out,
-    input wire status_in,
-    input wire service_in,
-    output reg service_out,
-    output reg suppress_out = 1'b0,
+    output reg a_hold_out,
+    output reg a_select_out,
+    input wire a_select_in,
+    output reg a_address_out,
+    input wire a_operational_in,
+    input wire a_address_in,
+    output reg a_command_out,
+    input wire a_status_in,
+    input wire a_service_in,
+    output reg a_service_out,
+    output reg a_suppress_out = 1'b0,
 
-    //
-
+    // ...
     input wire [7:0] address,
     input wire [7:0] command,
     input wire [7:0] count,
@@ -123,15 +121,15 @@ module channel (
                 next_hold_out = 1; // TODO: Can this be done at the same time?
                 next_select_out = 1;
 
-                if (operational_in)
+                if (a_operational_in)
                 begin
                     next_state = STATE_SELECTION_ADDRESS_IN;
                 end
-                else if (status_in)
+                else if (a_status_in)
                 begin
                     // TODO: this is "short-busy"
                 end
-                else if (select_in)
+                else if (a_select_in)
                 begin
                     next_state = STATE_IDLE;
                 end
@@ -145,7 +143,7 @@ module channel (
                 next_select_out = 1;
 
                 // TODO: what happens if bus_in != addres???
-                if (address_in && bus_in == address)
+                if (a_address_in && a_bus_in == address)
                 begin
                     next_state = STATE_SELECTION_COMMAND_OUT;
                 end
@@ -163,7 +161,7 @@ module channel (
                 next_bus_out = command;
                 next_command_out = 1;
 
-                if (!address_in)
+                if (!a_address_in)
                 begin
                     next_state = STATE_SELECTION_STATUS_IN;
                 end
@@ -173,9 +171,9 @@ module channel (
 
             STATE_SELECTION_STATUS_IN:
             begin
-                if (status_in)
+                if (a_status_in)
                 begin
-                    next_status = bus_in;
+                    next_status = a_bus_in;
                     next_status_strobe = 1;
 
                     // NOTE: for now we always "accept" status - we'll check in
@@ -188,7 +186,7 @@ module channel (
             begin
                 next_service_out = 1;
 
-                if (!status_in)
+                if (!a_status_in)
                 begin
                     // NOTE: the status from the CU has been "accepted", but is
                     // the status something that means we can continue?
@@ -210,7 +208,7 @@ module channel (
 
             STATE_SELECTED:
             begin
-                if (service_in)
+                if (a_service_in)
                 begin
                     if (res_count == 0)
                     begin
@@ -222,13 +220,13 @@ module channel (
                     end
                     else
                     begin
-                        $display("received byte %h from device", bus_in);
+                        $display("received byte %h from device", a_bus_in);
                         next_state = STATE_DATA;
                     end
                 end
-                else if (status_in)
+                else if (a_status_in)
                 begin
-                    next_status = bus_in;
+                    next_status = a_bus_in;
                     next_status_strobe = 1;
 
                     next_state = STATE_ENDING;
@@ -244,7 +242,7 @@ module channel (
 
                 next_service_out = 1;
 
-                if (!service_in)
+                if (!a_service_in)
                 begin
                     next_res_count = res_count - 1;
                     next_state = STATE_SELECTED;
@@ -255,7 +253,7 @@ module channel (
             begin
                 next_command_out = 1;
 
-                if (!service_in)
+                if (!a_service_in)
                 begin
                     // TODO: We are waiting for ending status!!!
                     next_state = STATE_SELECTED;
@@ -266,7 +264,7 @@ module channel (
             begin
                 next_service_out = 1;
 
-                if (!status_in)
+                if (!a_status_in)
                 begin
                     if (status[5]) // DE
                     begin
@@ -291,12 +289,12 @@ module channel (
             state_timer <= 0;
         end
 
-        bus_out <= next_bus_out;
-        address_out <= next_address_out;
-        hold_out <= next_hold_out;
-        select_out <= next_select_out;
-        command_out <= next_command_out;
-        service_out <= next_service_out;
+        a_bus_out <= next_bus_out;
+        a_address_out <= next_address_out;
+        a_hold_out <= next_hold_out;
+        a_select_out <= next_select_out;
+        a_command_out <= next_command_out;
+        a_service_out <= next_service_out;
 
         status <= next_status;
         status_strobe <= next_status_strobe;

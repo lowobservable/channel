@@ -28,7 +28,6 @@
 #    "/home/user/work/rtl/axi_channel.v"
 #    "/home/user/work/rtl/channel.v"
 #    "/home/user/work/rtl/mock_cu.v"
-#    "/home/user/work/rtl/terminator.v"
 #    "/home/user/work/pins.xdc"
 #    "/home/user/work/tests/assert.v"
 #    "/home/user/work/tests/channel_tb.v"
@@ -48,7 +47,6 @@ proc checkRequiredFiles { origin_dir} {
  "[file normalize "$origin_dir/rtl/axi_channel.v"]"\
  "[file normalize "$origin_dir/rtl/channel.v"]"\
  "[file normalize "$origin_dir/rtl/mock_cu.v"]"\
- "[file normalize "$origin_dir/rtl/terminator.v"]"\
  "[file normalize "$origin_dir/pins.xdc"]"\
  "[file normalize "$origin_dir/tests/assert.v"]"\
  "[file normalize "$origin_dir/tests/channel_tb.v"]"\
@@ -187,7 +185,6 @@ set files [list \
  [file normalize "${origin_dir}/rtl/axi_channel.v" ]\
  [file normalize "${origin_dir}/rtl/channel.v" ]\
  [file normalize "${origin_dir}/rtl/mock_cu.v" ]\
- [file normalize "${origin_dir}/rtl/terminator.v" ]\
 ]
 
 add_files -fileset sources_1 $files
@@ -238,7 +235,6 @@ set obj [get_filesets sim_1]
 set files [list \
  [file normalize "${origin_dir}/rtl/channel.v" ]\
  [file normalize "${origin_dir}/rtl/mock_cu.v" ]\
- [file normalize "${origin_dir}/rtl/terminator.v" ]\
  [file normalize "${origin_dir}/tests/assert.v" ]\
  [file normalize "${origin_dir}/tests/channel_tb.v" ]\
 ]
