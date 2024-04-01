@@ -92,6 +92,8 @@ module axi_channel (
     reg [31:0] dma_addr;
     reg channel_start = 1'b0;
     wire channel_active;
+    wire [7:0] channel_status;
+    wire [7:0] channel_res_count;
 
     always @(posedge aclk)
     begin
@@ -105,7 +107,7 @@ module axi_channel (
                     s_axi_rdata <= { channel_address, channel_command, channel_count, 6'b0, channel_start || channel_active, reset };
 
                 REG_STATUS:
-                    s_axi_rdata <= { 30'b0, channel_active, 1'b0 };
+                    s_axi_rdata <= { channel_status, 8'b0, channel_res_count, 6'b0, channel_active, 1'b0 };
 
                 REG_DMA_ADDR:
                     s_axi_rdata <= dma_addr;
@@ -341,13 +343,11 @@ module axi_channel (
         .count(channel_count),
         .start_strobe(channel_start),
 
-        .active(channel_active)
+        .active(channel_active),
 
-        /*
-        .status
-        .status_strobe
+        .status(channel_status),
+        .status_strobe(), // TODO
 
-        .res_count
-        */
+        .res_count(channel_res_count)
     );
 endmodule

@@ -22,8 +22,13 @@ int test_read_command_cu_more(struct chan *chan, struct mock_cu *mock_cu)
 
     int result = chan_exec(chan, 0xff, 0x02 /* READ */, buf, 6);
 
-    if (result != 0) {
+    if (result < 0) {
         printf("FAIL: unable to start test\n");
+        return -1;
+    }
+
+    if (result != 6) {
+        printf("FAIL: expected to receive 6 bytes, received %d\n", result);
         return -1;
     }
 
@@ -47,8 +52,13 @@ int test_read_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
 
     int result = chan_exec(chan, 0xff, 0x02 /* READ */, buf, 16);
 
-    if (result != 0) {
+    if (result < 0) {
         printf("FAIL: unable to start test\n");
+        return -1;
+    }
+
+    if (result != 6) {
+        printf("FAIL: expected to receive 6 bytes, received %d\n", result);
         return -1;
     }
 
@@ -72,8 +82,13 @@ int test_write_command_cu_more(struct chan *chan, struct mock_cu *mock_cu)
 
     int result = chan_exec(chan, 0xff, 0x01 /* WRITE */, buf, 6);
 
-    if (result != 0) {
+    if (result < 0) {
         printf("FAIL: unable to start test\n");
+        return -1;
+    }
+
+    if (result != 6) {
+        printf("FAIL: expected to transmit 6 bytes, sent %d\n", result);
         return -1;
     }
 
@@ -97,8 +112,13 @@ int test_write_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
 
     int result = chan_exec(chan, 0xff, 0x01 /* WRITE */, buf, 16);
 
-    if (result != 0) {
+    if (result < 0) {
         printf("FAIL: unable to start test\n");
+        return -1;
+    }
+
+    if (result != 6) {
+        printf("FAIL: expected to transmit 6 bytes, sent %d\n", result);
         return -1;
     }
 
