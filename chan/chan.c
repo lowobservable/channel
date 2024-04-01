@@ -12,9 +12,7 @@
 
 #define REG_CONTROL 0
 #define REG_STATUS 1
-#define REG_ADDR 2
-#define REG_COUNT 3
-#define REG_DATA 4
+#define REG_DMA_ADDR 2
 
 int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path)
 {
@@ -54,7 +52,7 @@ int chan_close(struct chan *chan)
     return result;
 }
 
-int chan_start(struct chan *chan, uint8_t ccw, uint8_t *buf, size_t count)
+int chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
 {
     if (count > chan->udmabuf.size) {
         return -1;
@@ -64,17 +62,24 @@ int chan_start(struct chan *chan, uint8_t ccw, uint8_t *buf, size_t count)
         return -1;
     }
 
-    chan->regs[REG_ADDR] = chan->udmabuf.addr;
-    chan->regs[REG_COUNT] = count;
-    chan->regs[REG_DATA] = (uint8_t) count;
+    /*
+    if (is_write_cmd(cmd)) {
+        udmabuf_copy_to_dma(&chan->udmabuf, buf, count);
+    }
+    */
 
-    chan->regs[REG_CONTROL] = 6; // Start write...
+    chan->regs[REG_DMA_ADDR] = chan->udmabuf.addr;
+    chan->regs[REG_CONTROL] = (addr << 24) | (cmd << 16) | (count << 8) | 0x02; // Start...
 
     while (chan->regs[REG_STATUS] & 2) {
         usleep(100);
     }
 
-    memcpy(buf, chan->udmabuf.buf, count);
+    /*
+    if (is_read_cmd(cmd)) {
+        udmabuf_copy_from_dma(&chan->udmabuf, buf, count);
+    }
+    */
 
     return 0;
 }

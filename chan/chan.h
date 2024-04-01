@@ -17,6 +17,6 @@ int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path)
 
 int chan_close(struct chan *chan);
 
-int chan_start(struct chan *chan, uint8_t ccw, uint8_t *buf, size_t count);
+int chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count);
 
 #endif

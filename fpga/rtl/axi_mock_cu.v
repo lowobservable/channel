@@ -52,6 +52,7 @@ module axi_mock_cu (
     output reg s_axi_bvalid
 );
     localparam REG_CONTROL = 8'h00;
+    localparam REG_STATUS = 8'h04;
 
     initial
     begin
@@ -64,8 +65,9 @@ module axi_mock_cu (
     end
 
     reg mock_busy;
-    reg [7:0] mock_read_count;
-    reg [7:0] mock_write_count;
+    reg [7:0] mock_limit;
+    wire [7:0] command;
+    wire [7:0] count;
 
     always @(posedge aclk)
     begin
@@ -76,7 +78,10 @@ module axi_mock_cu (
 
             case (s_axi_araddr)
                 REG_CONTROL:
-                    s_axi_rdata <= { 8'b0, mock_write_count, mock_read_count, 6'b0, mock_busy, 1'b0 };
+                    s_axi_rdata <= { 16'b0, mock_limit, 6'b0, mock_busy, 1'b0 };
+
+                REG_STATUS:
+                    s_axi_rdata <= { 8'b0, count, command, 8'b0 };
 
                 default:
                     s_axi_rresp <= 2'b10; // SLVERR
@@ -136,8 +141,7 @@ module axi_mock_cu (
                 REG_CONTROL:
                 begin
                     mock_busy <= wdata[1];
-                    mock_read_count <= wdata[15:8];
-                    mock_write_count <= wdata[23:16];
+                    mock_limit <= wdata[15:8];
                 end
 
                 default:
@@ -196,7 +200,9 @@ module axi_mock_cu (
         .a_select_in(a_select_in),
 
         .mock_busy(mock_busy),
-        .mock_read_count(mock_read_count),
-        .mock_write_count(mock_write_count)
+        .mock_limit(mock_limit),
+
+        .command(command),
+        .count(count)
     );
 endmodule

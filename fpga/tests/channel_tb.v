@@ -55,8 +55,7 @@ module channel_tb;
     wire terminator;
 
     reg cu_mock_busy = 0;
-    reg [7:0] cu_mock_read_count = 0;
-    reg [7:0] cu_mock_write_count = 0;
+    reg [7:0] cu_mock_limit = 0;
 
     mock_cu #(
         .ADDRESS(8'h1a),
@@ -84,8 +83,7 @@ module channel_tb;
         .a_select_in(terminator),
 
         .mock_busy(cu_mock_busy),
-        .mock_read_count(cu_mock_read_count),
-        .mock_write_count(cu_mock_write_count)
+        .mock_limit(cu_mock_limit)
     );
 
     initial
@@ -162,7 +160,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
-        cu_mock_read_count = 16; // CU can provide 16 bytes
+        cu_mock_limit = 16; // CU can provide 16 bytes
 
         channel_start(8'h1a, 8'h02 /* READ */, 6);
 
@@ -185,7 +183,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
-        cu_mock_read_count = 6; // CU can provide 6 bytes
+        cu_mock_limit = 6; // CU can provide 6 bytes
 
         channel_start(8'h1a, 8'h02 /* READ */, 16);
 
@@ -208,7 +206,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
-        cu_mock_write_count = 16; // CU can accept 16 bytes
+        cu_mock_limit = 16; // CU can accept 16 bytes
 
         channel_start(8'h1a, 8'h01 /* WRITE */, 6);
 
@@ -231,7 +229,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
-        cu_mock_write_count = 6; // CU can accept 6 bytes
+        cu_mock_limit = 6; // CU can accept 6 bytes
 
         channel_start(8'h1a, 8'h01 /* WRITE */, 16);
 

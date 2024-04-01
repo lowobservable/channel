@@ -72,9 +72,7 @@ module axi_channel (
 );
     localparam REG_CONTROL = 8'h00;
     localparam REG_STATUS = 8'h04;
-    localparam REG_ADDR = 8'h08;
-    localparam REG_COUNT = 8'h0c;
-    localparam REG_DATA = 8'h10;
+    localparam REG_DMA_ADDR = 8'h08;
 
     initial
     begin
@@ -88,13 +86,12 @@ module axi_channel (
 
     reg reset = 1'b0;
 
-    wire mock_busy;
-    reg mock_write = 1'b0;
-    reg mock_start = 1'b0;
-    reg [31:0] mock_addr;
-    reg [31:0] mock_count;
-    reg [7:0] mock_data_read;
-    reg [7:0] mock_data_write;
+    reg [7:0] channel_address;
+    reg [7:0] channel_command;
+    reg [7:0] channel_count;
+    reg [31:0] dma_addr;
+    reg channel_start = 1'b0;
+    wire channel_active;
 
     always @(posedge aclk)
     begin
@@ -105,19 +102,13 @@ module axi_channel (
 
             case (s_axi_araddr)
                 REG_CONTROL:
-                    s_axi_rdata <= { 29'b0, mock_write, mock_start || mock_busy, reset };
+                    s_axi_rdata <= { channel_address, channel_command, channel_count, 6'b0, channel_start || channel_active, reset };
 
                 REG_STATUS:
-                    s_axi_rdata <= { 30'b0, mock_busy, 1'b0 };
+                    s_axi_rdata <= { 30'b0, channel_active, 1'b0 };
 
-                REG_ADDR:
-                    s_axi_rdata <= mock_addr;
-
-                REG_COUNT:
-                    s_axi_rdata <= mock_count;
-
-                REG_DATA:
-                    s_axi_rdata <= { 16'b0, mock_data_read, mock_data_write };
+                REG_DMA_ADDR:
+                    s_axi_rdata <= dma_addr;
 
                 default:
                     s_axi_rresp <= 2'b10; // SLVERR
@@ -152,7 +143,7 @@ module axi_channel (
     begin
         // These are 1 clock "pulses"...
         reset <= 1'b0;
-        mock_start <= 1'b0;
+        channel_start <= 1'b0;
 
         if (s_axi_awready && s_axi_awvalid)
         begin
@@ -181,18 +172,14 @@ module axi_channel (
                 REG_CONTROL:
                 begin
                     reset <= wdata[0];
-                    mock_start <= wdata[1];
-                    mock_write <= wdata[2];
+                    channel_start <= wdata[1];
+                    channel_address <= wdata[31:24];
+                    channel_command <= wdata[23:16];
+                    channel_count <= wdata[15:8];
                 end
 
-                REG_ADDR:
-                    mock_addr <= wdata;
-
-                REG_COUNT:
-                    mock_count <= wdata;
-
-                REG_DATA:
-                    mock_data_write <= wdata[7:0];
+                REG_DMA_ADDR:
+                    dma_addr <= wdata;
 
                 default:
                     s_axi_bresp <= 2'b10; // SLVERR
@@ -216,7 +203,7 @@ module axi_channel (
         if (!aresetn)
         begin
             reset <= 1'b1;
-            mock_start <= 1'b0;
+            channel_start <= 1'b0;
 
             awaddr_full <= 1'b0;
             wdata_full <= 1'b0;
@@ -272,6 +259,7 @@ module axi_channel (
         .m_axi_bvalid(m_axi_bvalid)
     );
 
+    /*
     reg [7:0] x_state;
 
     assign mock_busy = (x_state != 0);
@@ -325,4 +313,41 @@ module axi_channel (
             x_state <= 0;
         end
     end
+    */
+
+    channel channel (
+        .clk(aclk),
+        .reset(reset),
+
+        .a_bus_in(a_bus_in),
+        .a_bus_out(a_bus_out),
+
+        .a_operational_out(a_operational_out),
+        .a_request_in(a_request_in),
+        .a_hold_out(a_hold_out),
+        .a_select_out(a_select_out),
+        .a_select_in(a_select_in),
+        .a_address_out(a_address_out),
+        .a_operational_in(a_operational_in),
+        .a_address_in(a_address_in),
+        .a_command_out(a_command_out),
+        .a_status_in(a_status_in),
+        .a_service_in(a_service_in),
+        .a_service_out(a_service_out),
+        .a_suppress_out(a_suppress_out),
+
+        .address(channel_address),
+        .command(channel_command),
+        .count(channel_count),
+        .start_strobe(channel_start),
+
+        .active(channel_active)
+
+        /*
+        .status
+        .status_strobe
+
+        .res_count
+        */
+    );
 endmodule

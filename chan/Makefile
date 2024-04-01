@@ -1,5 +1,5 @@
 CFLAGS = -Wall -I../libhack
 
-test: test.c chan.o ../libhack/libhack.a
+test: test.c chan.o mock_cu.o ../libhack/libhack.a
 
 .PHONY: clean

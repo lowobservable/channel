@@ -32,18 +32,17 @@ module mock_cu (
 
     // ...
     input wire mock_busy,
-    input wire [7:0] mock_read_count,
-    input wire [7:0] mock_write_count
+    input wire [7:0] mock_limit,
+
+    output reg [7:0] command,
+    output reg [7:0] count
 );
     parameter ADDRESS = 8'hff;
-    parameter ENABLE_SHORT_BUSY = 1;
+    parameter ENABLE_SHORT_BUSY = 0;
 
     reg [7:0] state = 0;
 
-    reg [7:0] command;
     reg [7:0] status = 8'b0011_0000; // CE + DE
-
-    reg [7:0] count;
 
     always @(posedge clk)
     begin
@@ -175,13 +174,13 @@ module mock_cu (
                         end
                         else if (command == 8'h01 /* WRITE */)
                         begin
-                            count <= mock_write_count;
+                            count <= 0;
 
                             state <= 11;
                         end
                         else if (command == 8'h02 /* READ */)
                         begin
-                            count <= mock_read_count;
+                            count <= 0;
 
                             state <= 8;
                         end
@@ -197,8 +196,7 @@ module mock_cu (
                 begin
                     //if (!b_suppress_out)
                     //begin
-
-                        b_bus_in <= count;
+                        b_bus_in <= count + 1;
                         b_service_in <= 1;
 
                         if (b_command_out)
@@ -211,7 +209,7 @@ module mock_cu (
                         else if (b_service_out)
                         begin
                             // Data has been accepted...
-                            count <= count - 1;
+                            count <= count + 1;
 
                             b_service_in <= 0;
                             state <= 9;
@@ -223,7 +221,7 @@ module mock_cu (
                 begin
                     if (!b_service_out)
                     begin
-                        if (count == 0)
+                        if (count == mock_limit)
                         begin
                             status <= 8'b0011_0000; // CE + DE
                             state <= 10;
@@ -253,7 +251,7 @@ module mock_cu (
                             // TODO: data is available on bus_out!
                             $display("received byte %h from channel", b_bus_out);
 
-                            count <= count - 1;
+                            count <= count + 1;
 
                             b_service_in <= 0;
                             state <= 12;
@@ -265,7 +263,7 @@ module mock_cu (
                 begin
                     if (!b_service_out)
                     begin
-                        if (count == 0)
+                        if (count == mock_limit)
                         begin
                             status <= 8'b0011_0000; // CE + DE
                             state <= 10;
