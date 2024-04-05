@@ -218,11 +218,13 @@ module axi_channel (
     end
 
     wire x_busy;
-    reg x_write;
     reg [31:0] x_addr;
-    wire [7:0] x_data_read;
     reg x_start;
     wire x_done;
+
+    wire [7:0] channel_data_send_tdata;
+    reg channel_data_send_tvalid;
+    wire channel_data_send_tready;
 
     wire [7:0] channel_data_recv_tdata;
     wire channel_data_recv_tvalid;
@@ -233,9 +235,9 @@ module axi_channel (
         .aresetn(aresetn),
 
         .busy(x_busy),
-        .write(x_write),
+        .write(!channel_command[0]), // READ command WRITES, WRITE command READS...
         .addr(x_addr),
-        .data_read(x_data_read),
+        .data_read(channel_data_send_tdata),
         .data_write(channel_data_recv_tdata),
         .start(x_start),
         .done(x_done),
@@ -269,10 +271,6 @@ module axi_channel (
 
     always @(posedge aclk)
     begin
-        // TODO: we use TREADY to indicate that the read has been "accepted", confirm
-        // that it is okay for the slave to wait on TVALID...
-        channel_data_recv_tready <= 1'b0;
-
         // Capture the DMA address and count when the channel starts.
         if (channel_start)
         begin
@@ -285,26 +283,46 @@ module axi_channel (
         case (x_state)
             0:
             begin
-                if (channel_data_recv_tvalid && !x_busy)
-                begin
-                    x_write <= 1'b1;
-                    x_start <= 1'b1;
+                // TODO: we use TREADY to indicate that the read has been "accepted", confirm
+                // that it is okay for the slave to wait on TVALID...
+                channel_data_send_tvalid <= 1'b0;
+                channel_data_recv_tready <= 1'b0;
 
-                    x_state <= 1;
+                if (x_count != 0 && !x_busy)
+                begin
+                    if ((channel_command[0] && channel_data_send_tready)
+                        || (!channel_command[0] && channel_data_recv_tvalid))
+                    begin
+                        x_start <= 1'b1;
+
+                        x_state <= 1;
+                    end
                 end
             end
 
-            1: // wait on write completion...
+            1: // wait on DMA completion
             begin
                 if (x_done)
                 begin
-                    // tell channel, 'cause TVALID + TREADY will be high here
-                    channel_data_recv_tready <= 1'b1;
-                end
+                    // let the channel know using TVALID or TREADY depending on direction
+                    if (channel_command[0])
+                        channel_data_send_tvalid <= 1'b1;
+                    else
+                        channel_data_recv_tready <= 1'b1;
 
-                // when the transfer is complete we can continue...
-                if (channel_data_recv_tready && channel_data_recv_tvalid)
+                    x_state <= 2;
+                end
+            end
+
+            2: // wait on channel completion
+            begin
+                if ((channel_command[0] && channel_data_send_tready && channel_data_send_tvalid)
+                    || (!channel_command[0] && channel_data_recv_tready && channel_data_recv_tvalid))
                 begin
+                    // Deassert these immediately...
+                    channel_data_send_tvalid <= 1'b0;
+                    channel_data_recv_tready <= 1'b0;
+
                     x_count <= x_count - 1;
                     x_addr <= x_addr + 1;
 
@@ -315,6 +333,9 @@ module axi_channel (
 
         if (!aresetn)
         begin
+            channel_data_send_tvalid <= 1'b0;
+            channel_data_recv_tready <= 1'b0;
+
             x_state <= 0;
         end
     end
@@ -352,9 +373,9 @@ module axi_channel (
 
         .res_count(channel_res_count),
 
-        .data_send_tdata(),
-        .data_send_tvalid(),
-        .data_send_tready(),
+        .data_send_tdata(channel_data_send_tdata),
+        .data_send_tvalid(channel_data_send_tvalid),
+        .data_send_tready(channel_data_send_tready),
 
         .data_recv_tdata(channel_data_recv_tdata),
         .data_recv_tvalid(channel_data_recv_tvalid),

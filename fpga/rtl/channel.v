@@ -40,7 +40,7 @@ module channel (
     // AXI-Stream for data being sent...
     input wire [7:0] data_send_tdata,
     input wire data_send_tvalid,
-    output wire data_send_tready,
+    output reg data_send_tready,
 
     // AXI-Stream for data being received...
     output reg [7:0] data_recv_tdata,
@@ -56,12 +56,13 @@ module channel (
     localparam STATE_SELECTION_SERVICE_OUT = 6;
     localparam STATE_SELECTED = 7;
 
-    localparam STATE_DATA_SEND = 8;
-    localparam STATE_DATA_RECV_1 = 9;
-    localparam STATE_DATA_RECV_2 = 10;
-    localparam STATE_STOP = 11;
+    localparam STATE_DATA_SEND_1 = 8;
+    localparam STATE_DATA_SEND_2 = 9;
+    localparam STATE_DATA_RECV_1 = 10;
+    localparam STATE_DATA_RECV_2 = 11;
+    localparam STATE_STOP = 12;
 
-    localparam STATE_ENDING = 12;
+    localparam STATE_ENDING = 13;
 
     reg [7:0] state = STATE_IDLE;
     reg [7:0] next_state;
@@ -78,6 +79,7 @@ module channel (
     reg next_status_strobe;
     reg [7:0] next_res_count;
 
+    reg next_data_send_tready;
     reg [7:0] next_data_recv_tdata;
     reg next_data_recv_tvalid;
 
@@ -96,6 +98,7 @@ module channel (
         next_status_strobe = 0;
         next_res_count = res_count;
 
+        next_data_send_tready = data_send_tready;
         next_data_recv_tdata = data_recv_tdata;
         next_data_recv_tvalid = data_recv_tvalid;
 
@@ -234,7 +237,9 @@ module channel (
                     end
                     else if (command[0] /* WRITE or CONTROL */) // TODO: not NOP...
                     begin
-                        next_state = STATE_DATA_SEND;
+                        next_data_send_tready = 1'b1;
+
+                        next_state = STATE_DATA_SEND_1;
                     end
                     else
                     begin
@@ -255,11 +260,23 @@ module channel (
                 end
             end
 
-            STATE_DATA_SEND:
+            STATE_DATA_SEND_1:
             begin
-                next_bus_out = res_count;
-                next_service_out = 1;
+                if (data_send_tready && data_send_tvalid)
+                begin
+                    next_data_send_tready = 1'b0;
 
+                    next_bus_out = data_send_tdata;
+                    next_service_out = 1;
+
+                    $display("sent byte %h to device", next_bus_out);
+
+                    next_state = STATE_DATA_SEND_2;
+                end
+            end
+
+            STATE_DATA_SEND_2:
+            begin
                 if (!a_service_in)
                 begin
                     next_res_count = res_count - 1;
@@ -339,6 +356,7 @@ module channel (
         status_strobe <= next_status_strobe;
         res_count <= next_res_count;
 
+        data_send_tready <= next_data_send_tready;
         data_recv_tdata <= next_data_recv_tdata;
         data_recv_tvalid <= next_data_recv_tvalid;
 
@@ -350,6 +368,7 @@ module channel (
             status_strobe <= 0;
             res_count <= 0;
 
+            data_send_tready <= 0;
             data_recv_tvalid <= 0;
         end
     end

@@ -51,6 +51,8 @@ module channel_tb;
         .count(channel_count),
         .start_strobe(channel_start_strobe),
 
+        .data_send_tdata(8'h99),
+        .data_send_tvalid(1'b1),
         .data_recv_tready(1'b1)
     );
 
@@ -109,7 +111,9 @@ module channel_tb;
         test_read_command_cu_less;
         /*
         test_write_command_cu_more;
+        */
         test_write_command_cu_less;
+        /*
         test_nop_command;
         test_invalid_command;
         */

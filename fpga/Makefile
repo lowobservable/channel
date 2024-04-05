@@ -1,11 +1,10 @@
 VIVADO ?= vivado
-BSR ?= ~/projects/bsr/target/release/bsr
+BSR ?= bsr
 
 PROJECT = project_1
 TOP = design_1_wrapper
 
-all:
-	echo "TODO"
+all: lint tests bit xsa
 
 vivado: $(PROJECT).xpr
 	$(VIVADO) -mode gui $(PROJECT).xpr
@@ -16,6 +15,7 @@ impl: $(PROJECT).runs/impl_1/$(TOP)_routed.dcp
 bit: $(PROJECT).bit
 bin: $(PROJECT).bin
 xsa: $(PROJECT).xsa
+ltx: $(PROJECT).ltx
 
 lint:
 	for dir in rtl tests; do \
@@ -51,7 +51,7 @@ $(PROJECT).runs/impl_1/$(TOP).bit: $(PROJECT).runs/impl_1/$(TOP)_routed.dcp
 	rm _bit.tcl
 
 $(PROJECT).bit: $(PROJECT).runs/impl_1/$(TOP).bit
-	ln -f -s $(PROJECT).runs/impl_1/$(TOP).bit $(PROJECT).bit
+	ln -f -s $< $@
 
 $(PROJECT).bin: project_1.bit
 	$(BSR) -i $< > $@
@@ -62,15 +62,27 @@ $(PROJECT).xsa: $(PROJECT).xpr
 	$(VIVADO) -mode batch -nojournal -nolog -source _xsa.tcl $(PROJECT).xpr
 	rm _xsa.tcl
 
+# This debug probes output name matches the Vivado UI default...
+$(PROJECT).runs/synth_1/$(TOP).ltx: $(PROJECT).runs/synth_1/$(TOP).dcp
+	echo "open_run synth_1" > _ltx.tcl
+	echo "write_debug_probes -force $@" >> _ltx.tcl
+	$(VIVADO) -mode batch -nojournal -nolog -source _ltx.tcl $(PROJECT).xpr
+	rm _ltx.tcl
+
+$(PROJECT).ltx: $(PROJECT).runs/synth_1/$(TOP).ltx
+	if [ -e "$<" ]; then \
+		ln -f -s $< $@;\
+	fi
+
 create_project.tcl:
 	echo "write_project_tcl -target_proj_dir . -force $@" > _write_project.tcl
 	$(VIVADO) -mode batch -nojournal -nolog -source _write_project.tcl $(PROJECT).xpr
 	rm _write_project.tcl
 
 clean:
-	rm -rf $(PROJECT).{bit,bin,cache,gen,hw,ip_user_files,runs,sim,srcs,xpr,xsa}
+	rm -rf $(PROJECT).{bit,bin,cache,gen,hw,ip_user_files,ltx,runs,sim,srcs,xpr,xsa}
 	rm -rf vivado*.{jou,log,str} .Xil
 	rm -rf _*.tcl
 	$(MAKE) -C tests clean
 
-.PHONY: all vivado project synth impl bit bin xsa lint tests clean
+.PHONY: all vivado project synth impl bit bin xsa ltx lint tests clean

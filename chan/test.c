@@ -12,9 +12,35 @@
 #include "chan.h"
 #include "mock_cu.h"
 
+void buf_arrange(uint8_t *buf, size_t count)
+{
+    for (size_t index = 0; index < count; index++) {
+        buf[index] = index + 1;
+    }
+}
+
+int buf_assert(uint8_t *buf, size_t count)
+{
+    int bad_count = 0;
+
+    for (size_t index = 0; index < count; index++) {
+        if (buf[index] != index + 1) {
+            bad_count++;
+        }
+    }
+
+    if (bad_count > 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
 int test_read_command_cu_more(struct chan *chan, struct mock_cu *mock_cu)
 {
     printf("TEST: read_command_cu_more\n");
+
+    udmabuf_clear(&chan->udmabuf, 0);
 
     mock_cu_arrange(mock_cu, 0, 16);
 
@@ -69,10 +95,8 @@ int test_read_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
         return -1;
     }
 
-    uint8_t expected_buf[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
-
-    if (memcmp(buf, expected_buf, 6) != 0) {
-        printf("FAIL: data did not match expected data:\n");
+    if (buf_assert(buf, 6) != 0) {
+        printf("FAIL: data received did not match expected data:\n");
         dump(buf, 6);
         return -1;
     }
@@ -85,6 +109,8 @@ int test_read_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
 int test_write_command_cu_more(struct chan *chan, struct mock_cu *mock_cu)
 {
     printf("TEST: write_command_cu_more\n");
+
+    udmabuf_clear(&chan->udmabuf, 0);
 
     mock_cu_arrange(mock_cu, 0, 16);
 
@@ -116,9 +142,13 @@ int test_write_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
 {
     printf("TEST: write_command_cu_less\n");
 
+    udmabuf_clear(&chan->udmabuf, 0);
+
     mock_cu_arrange(mock_cu, 0, 6);
 
     uint8_t buf[16];
+
+    buf_arrange(buf, 16);
 
     int result = chan_exec(chan, 0xff, 0x01 /* WRITE */, buf, 16);
 
@@ -167,10 +197,10 @@ int main(void)
 
     printf("READY\n");
 
-    //test_read_command_cu_more(&chan, &mock_cu);
+    //BROKE: test_read_command_cu_more(&chan, &mock_cu);
     test_read_command_cu_less(&chan, &mock_cu);
-    //test_write_command_cu_more(&chan, &mock_cu);
-    //test_write_command_cu_less(&chan, &mock_cu);
+    //BROKE: test_write_command_cu_more(&chan, &mock_cu);
+    test_write_command_cu_less(&chan, &mock_cu);
 
     mock_cu_close(&mock_cu);
 
