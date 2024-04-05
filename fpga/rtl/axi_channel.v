@@ -220,11 +220,13 @@ module axi_channel (
     wire x_busy;
     reg x_write;
     reg [31:0] x_addr;
-    reg [31:0] x_count;
     wire [7:0] x_data_read;
-    reg [7:0] x_data_write;
     reg x_start;
     wire x_done;
+
+    wire [7:0] channel_data_recv_tdata;
+    wire channel_data_recv_tvalid;
+    reg channel_data_recv_tready;
 
     axi_byte_io axi_byte_io (
         .aclk(aclk),
@@ -234,7 +236,7 @@ module axi_channel (
         .write(x_write),
         .addr(x_addr),
         .data_read(x_data_read),
-        .data_write(x_data_write ^ x_count[7:0]), // XXX
+        .data_write(channel_data_recv_tdata),
         .start(x_start),
         .done(x_done),
 
@@ -261,51 +263,52 @@ module axi_channel (
         .m_axi_bvalid(m_axi_bvalid)
     );
 
-    /*
     reg [7:0] x_state;
 
-    assign mock_busy = (x_state != 0);
+    reg [7:0] x_count;
 
     always @(posedge aclk)
     begin
+        // TODO: we use TREADY to indicate that the read has been "accepted", confirm
+        // that it is okay for the slave to wait on TVALID...
+        channel_data_recv_tready <= 1'b0;
+
+        // Capture the DMA address and count when the channel starts.
+        if (channel_start)
+        begin
+            x_count <= channel_count;
+            x_addr <= dma_addr;
+        end
+
         x_start <= 1'b0;
 
         case (x_state)
             0:
             begin
-                if (mock_start)
+                if (channel_data_recv_tvalid && !x_busy)
                 begin
-                    x_write <= mock_write;
-                    x_addr <= mock_addr;
-                    x_count <= mock_count;
-                    x_data_write <= mock_data_write;
+                    x_write <= 1'b1;
+                    x_start <= 1'b1;
 
                     x_state <= 1;
                 end
             end
 
-            1:
-            begin
-                if (x_count == 0)
-                begin
-                    x_state <= 0;
-                end
-                else if (!x_busy)
-                begin
-                    x_start <= 1'b1;
-                    x_state <= 2;
-                end
-            end
-
-            2:
+            1: // wait on write completion...
             begin
                 if (x_done)
                 begin
-                    mock_data_read <= x_data_read;
+                    // tell channel, 'cause TVALID + TREADY will be high here
+                    channel_data_recv_tready <= 1'b1;
+                end
 
-                    x_addr <= x_addr + 1;
+                // when the transfer is complete we can continue...
+                if (channel_data_recv_tready && channel_data_recv_tvalid)
+                begin
                     x_count <= x_count - 1;
-                    x_state <= 1;
+                    x_addr <= x_addr + 1;
+
+                    x_state <= 0;
                 end
             end
         endcase
@@ -315,7 +318,6 @@ module axi_channel (
             x_state <= 0;
         end
     end
-    */
 
     channel channel (
         .clk(aclk),
@@ -348,6 +350,14 @@ module axi_channel (
         .status(channel_status),
         .status_strobe(), // TODO
 
-        .res_count(channel_res_count)
+        .res_count(channel_res_count),
+
+        .data_send_tdata(),
+        .data_send_tvalid(),
+        .data_send_tready(),
+
+        .data_recv_tdata(channel_data_recv_tdata),
+        .data_recv_tvalid(channel_data_recv_tvalid),
+        .data_recv_tready(channel_data_recv_tready)
     );
 endmodule

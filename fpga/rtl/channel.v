@@ -35,7 +35,17 @@ module channel (
     output reg [7:0] status,
     output reg status_strobe,
 
-    output reg [7:0] res_count
+    output reg [7:0] res_count,
+
+    // AXI-Stream for data being sent...
+    input wire [7:0] data_send_tdata,
+    input wire data_send_tvalid,
+    output wire data_send_tready,
+
+    // AXI-Stream for data being received...
+    output reg [7:0] data_recv_tdata,
+    output reg data_recv_tvalid,
+    input wire data_recv_tready
 );
     localparam STATE_IDLE = 0;
     localparam STATE_SELECTION_ADDRESS_OUT = 1;
@@ -46,10 +56,12 @@ module channel (
     localparam STATE_SELECTION_SERVICE_OUT = 6;
     localparam STATE_SELECTED = 7;
 
-    localparam STATE_DATA = 8;
-    localparam STATE_STOP = 9;
+    localparam STATE_DATA_SEND = 8;
+    localparam STATE_DATA_RECV_1 = 9;
+    localparam STATE_DATA_RECV_2 = 10;
+    localparam STATE_STOP = 11;
 
-    localparam STATE_ENDING = 10;
+    localparam STATE_ENDING = 12;
 
     reg [7:0] state = STATE_IDLE;
     reg [7:0] next_state;
@@ -66,6 +78,9 @@ module channel (
     reg next_status_strobe;
     reg [7:0] next_res_count;
 
+    reg [7:0] next_data_recv_tdata;
+    reg next_data_recv_tvalid;
+
     always @(*)
     begin
         next_state = state;
@@ -80,6 +95,9 @@ module channel (
         next_status = status; // TODO: hack to allow us to use status internaly
         next_status_strobe = 0;
         next_res_count = res_count;
+
+        next_data_recv_tdata = data_recv_tdata;
+        next_data_recv_tvalid = data_recv_tvalid;
 
         case (state)
             STATE_IDLE:
@@ -216,12 +234,16 @@ module channel (
                     end
                     else if (command[0] /* WRITE or CONTROL */) // TODO: not NOP...
                     begin
-                        next_state = STATE_DATA;
+                        next_state = STATE_DATA_SEND;
                     end
                     else
                     begin
                         $display("received byte %h from device", a_bus_in);
-                        next_state = STATE_DATA;
+
+                        next_data_recv_tdata = a_bus_in;
+                        next_data_recv_tvalid = 1'b1;
+
+                        next_state = STATE_DATA_RECV_1;
                     end
                 end
                 else if (a_status_in)
@@ -233,18 +255,35 @@ module channel (
                 end
             end
 
-            STATE_DATA:
+            STATE_DATA_SEND:
             begin
-                if (command[0] /* WRITE or CONTROL */)
-                begin
-                    next_bus_out = res_count;
-                end
-
+                next_bus_out = res_count;
                 next_service_out = 1;
 
                 if (!a_service_in)
                 begin
                     next_res_count = res_count - 1;
+                    next_state = STATE_SELECTED;
+                end
+            end
+
+            STATE_DATA_RECV_1:
+            begin
+                if (data_recv_tready && data_recv_tvalid)
+                begin
+                    next_data_recv_tvalid = 1'b0;
+
+                    next_state = STATE_DATA_RECV_2;
+                end
+            end
+
+            STATE_DATA_RECV_2:
+            begin
+                next_service_out = 1;
+
+                if (!a_service_in)
+                begin
+                    next_res_count = res_count - 1; // TODO: remove this
                     next_state = STATE_SELECTED;
                 end
             end
@@ -300,6 +339,9 @@ module channel (
         status_strobe <= next_status_strobe;
         res_count <= next_res_count;
 
+        data_recv_tdata <= next_data_recv_tdata;
+        data_recv_tvalid <= next_data_recv_tvalid;
+
         if (reset)
         begin
             state <= STATE_IDLE;
@@ -307,6 +349,8 @@ module channel (
             status <= 0;
             status_strobe <= 0;
             res_count <= 0;
+
+            data_recv_tvalid <= 0;
         end
     end
 

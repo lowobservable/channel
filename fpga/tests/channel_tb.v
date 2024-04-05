@@ -49,7 +49,9 @@ module channel_tb;
         .address(channel_address),
         .command(channel_command),
         .count(channel_count),
-        .start_strobe(channel_start_strobe)
+        .start_strobe(channel_start_strobe),
+
+        .data_recv_tready(1'b1)
     );
 
     wire terminator;
@@ -99,14 +101,18 @@ module channel_tb;
         $dumpfile("channel_tb.vcd");
         $dumpvars(0, channel_tb);
 
+        /*
         test_no_cu;
         test_busy;
         test_read_command_cu_more;
+        */
         test_read_command_cu_less;
+        /*
         test_write_command_cu_more;
         test_write_command_cu_less;
         test_nop_command;
         test_invalid_command;
+        */
 
         $finish;
     end

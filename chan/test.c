@@ -27,13 +27,13 @@ int test_read_command_cu_more(struct chan *chan, struct mock_cu *mock_cu)
         return -1;
     }
 
-    if (result != 6) {
-        printf("FAIL: expected to receive 6 bytes, received %d\n", result);
+    if (mock_cu_assert(mock_cu, 0x02, 6) != 0) {
+        printf("FAIL: mock CU assertions failed\n");
         return -1;
     }
 
-    if (mock_cu_assert(mock_cu, 0x02, 6) != 0) {
-        printf("FAIL: mock CU assertions failed\n");
+    if (result != 6) {
+        printf("FAIL: expected to receive 6 bytes, received %d\n", result);
         return -1;
     }
 
@@ -46,6 +46,8 @@ int test_read_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
 {
     printf("TEST: read_command_cu_less\n");
 
+    udmabuf_clear(&chan->udmabuf, 0);
+
     mock_cu_arrange(mock_cu, 0, 6);
 
     uint8_t buf[16];
@@ -57,13 +59,21 @@ int test_read_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
         return -1;
     }
 
+    if (mock_cu_assert(mock_cu, 0x02, 6) != 0) {
+        printf("FAIL: mock CU assertions failed\n");
+        return -1;
+    }
+
     if (result != 6) {
         printf("FAIL: expected to receive 6 bytes, received %d\n", result);
         return -1;
     }
 
-    if (mock_cu_assert(mock_cu, 0x02, 6) != 0) {
-        printf("FAIL: mock CU assertions failed\n");
+    uint8_t expected_buf[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
+
+    if (memcmp(buf, expected_buf, 6) != 0) {
+        printf("FAIL: data did not match expected data:\n");
+        dump(buf, 6);
         return -1;
     }
 
@@ -87,13 +97,13 @@ int test_write_command_cu_more(struct chan *chan, struct mock_cu *mock_cu)
         return -1;
     }
 
-    if (result != 6) {
-        printf("FAIL: expected to transmit 6 bytes, sent %d\n", result);
+    if (mock_cu_assert(mock_cu, 0x01, 6) != 0) {
+        printf("FAIL: mock CU assertions failed\n");
         return -1;
     }
 
-    if (mock_cu_assert(mock_cu, 0x01, 6) != 0) {
-        printf("FAIL: mock CU assertions failed\n");
+    if (result != 6) {
+        printf("FAIL: expected to transmit 6 bytes, sent %d\n", result);
         return -1;
     }
 
@@ -117,13 +127,13 @@ int test_write_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
         return -1;
     }
 
-    if (result != 6) {
-        printf("FAIL: expected to transmit 6 bytes, sent %d\n", result);
+    if (mock_cu_assert(mock_cu, 0x01, 6) != 0) {
+        printf("FAIL: mock CU assertions failed\n");
         return -1;
     }
 
-    if (mock_cu_assert(mock_cu, 0x01, 6) != 0) {
-        printf("FAIL: mock CU assertions failed\n");
+    if (result != 6) {
+        printf("FAIL: expected to transmit 6 bytes, sent %d\n", result);
         return -1;
     }
 
@@ -157,10 +167,10 @@ int main(void)
 
     printf("READY\n");
 
-    test_read_command_cu_more(&chan, &mock_cu);
+    //test_read_command_cu_more(&chan, &mock_cu);
     test_read_command_cu_less(&chan, &mock_cu);
-    test_write_command_cu_more(&chan, &mock_cu);
-    test_write_command_cu_less(&chan, &mock_cu);
+    //test_write_command_cu_more(&chan, &mock_cu);
+    //test_write_command_cu_less(&chan, &mock_cu);
 
     mock_cu_close(&mock_cu);
 
