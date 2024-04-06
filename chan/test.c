@@ -12,171 +12,13 @@
 #include "chan.h"
 #include "mock_cu.h"
 
-void buf_arrange(uint8_t *buf, size_t count)
-{
-    for (size_t index = 0; index < count; index++) {
-        buf[index] = index + 1;
-    }
-}
+int test_read_command(char *case_name, struct chan *chan, uint8_t count,
+        struct mock_cu *mock_cu, uint8_t mock_cu_limit, uint8_t expected_count);
+int test_write_command(char *case_name, struct chan *chan, uint8_t count,
+        struct mock_cu *mock_cu, uint8_t mock_cu_limit, uint8_t expected_count);
 
-int buf_assert(uint8_t *buf, size_t count)
-{
-    int bad_count = 0;
-
-    for (size_t index = 0; index < count; index++) {
-        if (buf[index] != index + 1) {
-            bad_count++;
-        }
-    }
-
-    if (bad_count > 0) {
-        return -1;
-    }
-
-    return 0;
-}
-
-int test_read_command_cu_more(struct chan *chan, struct mock_cu *mock_cu)
-{
-    printf("TEST: read_command_cu_more\n");
-
-    udmabuf_clear(&chan->udmabuf, 0);
-
-    mock_cu_arrange(mock_cu, 0, 16);
-
-    uint8_t buf[6];
-
-    int result = chan_exec(chan, 0xff, 0x02 /* READ */, buf, 6);
-
-    if (result < 0) {
-        printf("FAIL: unable to start test\n");
-        return -1;
-    }
-
-    if (mock_cu_assert(mock_cu, 0x02, 6) != 0) {
-        printf("FAIL: mock CU assertions failed\n");
-        return -1;
-    }
-
-    if (result != 6) {
-        printf("FAIL: expected to receive 6 bytes, received %d\n", result);
-        return -1;
-    }
-
-    if (buf_assert(buf, 6) != 0) {
-        printf("FAIL: data received did not match expected data:\n");
-        dump(buf, 6);
-        return -1;
-    }
-
-    printf("PASS\n");
-
-    return 0;
-}
-
-int test_read_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
-{
-    printf("TEST: read_command_cu_less\n");
-
-    udmabuf_clear(&chan->udmabuf, 0);
-
-    mock_cu_arrange(mock_cu, 0, 6);
-
-    uint8_t buf[16];
-
-    int result = chan_exec(chan, 0xff, 0x02 /* READ */, buf, 16);
-
-    if (result < 0) {
-        printf("FAIL: unable to start test\n");
-        return -1;
-    }
-
-    if (mock_cu_assert(mock_cu, 0x02, 6) != 0) {
-        printf("FAIL: mock CU assertions failed\n");
-        return -1;
-    }
-
-    if (result != 6) {
-        printf("FAIL: expected to receive 6 bytes, received %d\n", result);
-        return -1;
-    }
-
-    if (buf_assert(buf, 6) != 0) {
-        printf("FAIL: data received did not match expected data:\n");
-        dump(buf, 6);
-        return -1;
-    }
-
-    printf("PASS\n");
-
-    return 0;
-}
-
-int test_write_command_cu_more(struct chan *chan, struct mock_cu *mock_cu)
-{
-    printf("TEST: write_command_cu_more\n");
-
-    udmabuf_clear(&chan->udmabuf, 0);
-
-    mock_cu_arrange(mock_cu, 0, 16);
-
-    uint8_t buf[6];
-
-    int result = chan_exec(chan, 0xff, 0x01 /* WRITE */, buf, 6);
-
-    if (result < 0) {
-        printf("FAIL: unable to start test\n");
-        return -1;
-    }
-
-    if (mock_cu_assert(mock_cu, 0x01, 6) != 0) {
-        printf("FAIL: mock CU assertions failed\n");
-        return -1;
-    }
-
-    if (result != 6) {
-        printf("FAIL: expected to transmit 6 bytes, sent %d\n", result);
-        return -1;
-    }
-
-    printf("PASS\n");
-
-    return 0;
-}
-
-int test_write_command_cu_less(struct chan *chan, struct mock_cu *mock_cu)
-{
-    printf("TEST: write_command_cu_less\n");
-
-    udmabuf_clear(&chan->udmabuf, 0);
-
-    mock_cu_arrange(mock_cu, 0, 6);
-
-    uint8_t buf[16];
-
-    buf_arrange(buf, 16);
-
-    int result = chan_exec(chan, 0xff, 0x01 /* WRITE */, buf, 16);
-
-    if (result < 0) {
-        printf("FAIL: unable to start test\n");
-        return -1;
-    }
-
-    if (mock_cu_assert(mock_cu, 0x01, 6) != 0) {
-        printf("FAIL: mock CU assertions failed\n");
-        return -1;
-    }
-
-    if (result != 6) {
-        printf("FAIL: expected to transmit 6 bytes, sent %d\n", result);
-        return -1;
-    }
-
-    printf("PASS\n");
-
-    return 0;
-}
+void buf_arrange(uint8_t *buf, size_t count);
+int buf_assert(uint8_t *buf, size_t count);
 
 int main(void)
 {
@@ -203,14 +45,116 @@ int main(void)
 
     printf("READY\n");
 
-    test_read_command_cu_more(&chan, &mock_cu);
-    test_read_command_cu_less(&chan, &mock_cu);
-    test_write_command_cu_more(&chan, &mock_cu);
-    test_write_command_cu_less(&chan, &mock_cu);
+    test_read_command("read_command_cu_more", &chan, 6, &mock_cu, 16, 6);
+    test_read_command("read_command_cu_less", &chan, 16, &mock_cu, 6, 6);
+    test_write_command("write_command_cu_more", &chan, 6, &mock_cu, 16, 6);
+    test_write_command("write_command_cu_less", &chan, 16, &mock_cu, 6, 6);
 
     mock_cu_close(&mock_cu);
 
     chan_close(&chan);
 
     close(mem_fd);
+}
+
+int test_read_command(char *case_name, struct chan *chan, uint8_t count,
+        struct mock_cu *mock_cu, uint8_t mock_cu_limit, uint8_t expected_count)
+{
+    printf("TEST: %s\n", case_name);
+
+    udmabuf_clear(&chan->udmabuf, 0);
+
+    mock_cu_arrange(mock_cu, 0, mock_cu_limit);
+
+    uint8_t cmd = 0x02; // READ
+
+    uint8_t buf[1024];
+
+    int result = chan_exec(chan, 0xff, cmd, buf, count);
+
+    if (result < 0) {
+        printf("FAIL: unable to start channel\n");
+        return -1;
+    }
+
+    if (result != expected_count) {
+        printf("FAIL: expected to receive %d bytes, received %d\n", expected_count, result);
+        return -1;
+    }
+
+    if (mock_cu_assert(mock_cu, cmd, expected_count) != 0) {
+        printf("FAIL: mock CU assertions failed\n");
+        return -1;
+    }
+
+    if (buf_assert(buf, result) != 0) {
+        printf("FAIL: data received did not match expected data:\n");
+        dump(buf, result);
+        return -1;
+    }
+
+    printf("PASS\n");
+
+    return 0;
+}
+
+int test_write_command(char *case_name, struct chan *chan, uint8_t count,
+        struct mock_cu *mock_cu, uint8_t mock_cu_limit, uint8_t expected_count)
+{
+    printf("TEST: %s\n", case_name);
+
+    udmabuf_clear(&chan->udmabuf, 0);
+
+    mock_cu_arrange(mock_cu, 0, mock_cu_limit);
+
+    uint8_t cmd = 0x01; // WRITE
+
+    uint8_t buf[1024];
+
+    buf_arrange(buf, count);
+
+    int result = chan_exec(chan, 0xff, cmd, buf, count);
+
+    if (result < 0) {
+        printf("FAIL: unable to start channel\n");
+        return -1;
+    }
+
+    if (result != expected_count) {
+        printf("FAIL: expected to send %d bytes, sent %d\n", expected_count, result);
+        return -1;
+    }
+
+    if (mock_cu_assert(mock_cu, cmd, expected_count) != 0) {
+        printf("FAIL: mock CU assertions failed\n");
+        return -1;
+    }
+
+    printf("PASS\n");
+
+    return 0;
+}
+
+void buf_arrange(uint8_t *buf, size_t count)
+{
+    for (size_t index = 0; index < count; index++) {
+        buf[index] = index + 1;
+    }
+}
+
+int buf_assert(uint8_t *buf, size_t count)
+{
+    int bad_count = 0;
+
+    for (size_t index = 0; index < count; index++) {
+        if (buf[index] != index + 1) {
+            bad_count++;
+        }
+    }
+
+    if (bad_count > 0) {
+        return -1;
+    }
+
+    return 0;
 }
