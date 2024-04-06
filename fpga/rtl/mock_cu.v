@@ -201,7 +201,7 @@ module mock_cu (
 
                         if (b_command_out)
                         begin
-                            $display("STOP!");
+                            $display("cu: stop");
 
                             b_service_in <= 0;
                             state <= 13;
@@ -209,6 +209,8 @@ module mock_cu (
                         else if (b_service_out)
                         begin
                             // Data has been accepted...
+                            $display("cu: sent byte %h to channel", b_bus_in);
+
                             count <= count + 1;
 
                             b_service_in <= 0;
@@ -241,15 +243,14 @@ module mock_cu (
 
                         if (b_command_out)
                         begin
-                            $display("STOP!");
+                            $display("cu: stop");
 
                             b_service_in <= 0;
                             state <= 13;
                         end
-                        if (b_service_out)
+                        else if (b_service_out)
                         begin
-                            // TODO: data is available on bus_out!
-                            $display("received byte %h from channel", b_bus_out);
+                            $display("cu: received byte %h from channel", b_bus_out);
 
                             count <= count + 1;
 

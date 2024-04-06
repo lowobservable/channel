@@ -63,6 +63,12 @@ int test_read_command_cu_more(struct chan *chan, struct mock_cu *mock_cu)
         return -1;
     }
 
+    if (buf_assert(buf, 6) != 0) {
+        printf("FAIL: data received did not match expected data:\n");
+        dump(buf, 6);
+        return -1;
+    }
+
     printf("PASS\n");
 
     return 0;
@@ -197,9 +203,9 @@ int main(void)
 
     printf("READY\n");
 
-    //BROKE: test_read_command_cu_more(&chan, &mock_cu);
+    test_read_command_cu_more(&chan, &mock_cu);
     test_read_command_cu_less(&chan, &mock_cu);
-    //BROKE: test_write_command_cu_more(&chan, &mock_cu);
+    test_write_command_cu_more(&chan, &mock_cu);
     test_write_command_cu_less(&chan, &mock_cu);
 
     mock_cu_close(&mock_cu);

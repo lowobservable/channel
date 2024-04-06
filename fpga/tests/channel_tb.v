@@ -23,8 +23,15 @@ module channel_tb;
 
     reg [7:0] channel_address;
     reg [7:0] channel_command;
+    reg channel_start = 0;
+    reg channel_stop = 0;
+
     reg [7:0] channel_count;
-    reg channel_start_strobe = 0;
+
+    reg channel_data_send_tvalid = 0;
+    wire channel_data_send_tready;
+    wire channel_data_recv_tvalid;
+    reg channel_data_recv_tready = 0;
 
     channel channel (
         .clk(clk),
@@ -48,12 +55,14 @@ module channel_tb;
 
         .address(channel_address),
         .command(channel_command),
-        .count(channel_count),
-        .start_strobe(channel_start_strobe),
+        .start(channel_start),
+        .stop(channel_stop),
 
         .data_send_tdata(8'h99),
-        .data_send_tvalid(1'b1),
-        .data_recv_tready(1'b1)
+        .data_send_tvalid(channel_data_send_tvalid),
+        .data_send_tready(channel_data_send_tready),
+        .data_recv_tvalid(channel_data_recv_tvalid),
+        .data_recv_tready(channel_data_recv_tready)
     );
 
     wire terminator;
@@ -103,20 +112,14 @@ module channel_tb;
         $dumpfile("channel_tb.vcd");
         $dumpvars(0, channel_tb);
 
-        /*
         test_no_cu;
         test_busy;
         test_read_command_cu_more;
-        */
         test_read_command_cu_less;
-        /*
         test_write_command_cu_more;
-        */
         test_write_command_cu_less;
-        /*
         test_nop_command;
         test_invalid_command;
-        */
 
         $finish;
     end
@@ -131,7 +134,7 @@ module channel_tb;
 
         cu_mock_busy = 0;
 
-        channel_start(8'h10, 8'h02 /* READ */, 6);
+        start_channel(8'h10, 8'h02 /* READ */, 6);
 
         #40;
 
@@ -151,7 +154,7 @@ module channel_tb;
 
         cu_mock_busy = 1;
 
-        channel_start(8'h1a, 8'h02 /* READ */, 6);
+        start_channel(8'h1a, 8'h02 /* READ */, 6);
 
         #60;
 
@@ -172,13 +175,13 @@ module channel_tb;
         cu_mock_busy = 0;
         cu_mock_limit = 16; // CU can provide 16 bytes
 
-        channel_start(8'h1a, 8'h02 /* READ */, 6);
+        start_channel(8'h1a, 8'h02 /* READ */, 6);
 
-        #170;
+        #200;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
-        `assert_equal(channel.res_count, 0, "channel residual count should be 0")
+        `assert_equal(channel_count, 0, "count should be 0")
 
         $display("END: test_read_command_cu_more");
     end
@@ -195,13 +198,13 @@ module channel_tb;
         cu_mock_busy = 0;
         cu_mock_limit = 6; // CU can provide 6 bytes
 
-        channel_start(8'h1a, 8'h02 /* READ */, 16);
+        start_channel(8'h1a, 8'h02 /* READ */, 16);
 
-        #170;
+        #200;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
-        `assert_equal(channel.res_count, 10, "channel residual count should be 10")
+        `assert_equal(channel_count, 10, "count should be 10")
 
         $display("END: test_read_command_cu_less");
     end
@@ -218,13 +221,13 @@ module channel_tb;
         cu_mock_busy = 0;
         cu_mock_limit = 16; // CU can accept 16 bytes
 
-        channel_start(8'h1a, 8'h01 /* WRITE */, 6);
+        start_channel(8'h1a, 8'h01 /* WRITE */, 6);
 
-        #170;
+        #200;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
-        `assert_equal(channel.res_count, 0, "channel residual count should be 0")
+        `assert_equal(channel_count, 0, "count should be 0")
 
         $display("END: test_write_command_cu_more");
     end
@@ -241,13 +244,13 @@ module channel_tb;
         cu_mock_busy = 0;
         cu_mock_limit = 6; // CU can accept 6 bytes
 
-        channel_start(8'h1a, 8'h01 /* WRITE */, 16);
+        start_channel(8'h1a, 8'h01 /* WRITE */, 16);
 
-        #170;
+        #200;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
-        `assert_equal(channel.res_count, 10, "channel residual count should be 10")
+        `assert_equal(channel_count, 10, "count should be 10")
 
         $display("END: test_write_command_cu_less");
     end
@@ -263,7 +266,7 @@ module channel_tb;
 
         cu_mock_busy = 0;
 
-        channel_start(8'h1a, 8'h03 /* NOP */, 0);
+        start_channel(8'h1a, 8'h03 /* NOP */, 0);
 
         #60;
 
@@ -283,7 +286,7 @@ module channel_tb;
 
         cu_mock_busy = 0;
 
-        channel_start(8'h1a, 8'hff, 6);
+        start_channel(8'h1a, 8'hff, 6);
 
         #60;
 
@@ -293,7 +296,7 @@ module channel_tb;
     end
     endtask
 
-    task channel_start (
+    task start_channel (
         input [7:0] address,
         input [7:0] command,
         input [7:0] count
@@ -302,10 +305,37 @@ module channel_tb;
         channel_address = address;
         channel_command = command;
         channel_count = count;
-        channel_start_strobe = 1;
+
+        channel_start = 1;
 
         #2;
-        channel_start_strobe = 0;
+        channel_start = 0;
     end
     endtask
+
+    always @(posedge clk)
+    begin
+        channel_stop <= 0;
+
+        channel_data_send_tvalid <= 0;
+        channel_data_recv_tready <= 0;
+
+        if (channel_data_send_tready || channel_data_recv_tvalid)
+        begin
+            if (channel_count == 0)
+            begin
+                channel_stop <= 1;
+            end
+            else
+            begin
+                channel_data_send_tvalid <= 1;
+                channel_data_recv_tready <= 1;
+            end
+        end
+
+        if ((channel_data_send_tvalid && channel_data_send_tready) || (channel_data_recv_tvalid && channel_data_recv_tready))
+        begin
+            channel_count <= channel_count - 1;
+        end
+    end
 endmodule

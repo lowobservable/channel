@@ -86,14 +86,15 @@ module axi_channel (
 
     reg reset = 1'b0;
 
+    wire channel_active;
     reg [7:0] channel_address;
     reg [7:0] channel_command;
     reg [7:0] channel_count;
     reg [31:0] dma_addr;
     reg channel_start = 1'b0;
-    wire channel_active;
+    reg channel_stop = 1'b0;
     wire [7:0] channel_status;
-    wire [7:0] channel_res_count;
+    reg [7:0] res_count;
 
     always @(posedge aclk)
     begin
@@ -107,7 +108,7 @@ module axi_channel (
                     s_axi_rdata <= { channel_address, channel_command, channel_count, 6'b0, channel_start || channel_active, reset };
 
                 REG_STATUS:
-                    s_axi_rdata <= { channel_status, 8'b0, channel_res_count, 6'b0, channel_active, 1'b0 };
+                    s_axi_rdata <= { channel_status, 8'b0, res_count, 6'b0, channel_active, 1'b0 };
 
                 REG_DMA_ADDR:
                     s_axi_rdata <= dma_addr;
@@ -267,17 +268,16 @@ module axi_channel (
 
     reg [7:0] x_state;
 
-    reg [7:0] x_count;
-
     always @(posedge aclk)
     begin
         // Capture the DMA address and count when the channel starts.
         if (channel_start)
         begin
-            x_count <= channel_count;
+            res_count <= channel_count;
             x_addr <= dma_addr;
         end
 
+        channel_stop <= 1'b0;
         x_start <= 1'b0;
 
         case (x_state)
@@ -288,10 +288,14 @@ module axi_channel (
                 channel_data_send_tvalid <= 1'b0;
                 channel_data_recv_tready <= 1'b0;
 
-                if (x_count != 0 && !x_busy)
+                if ((channel_command[0] && channel_data_send_tready)
+                    || (!channel_command[0] && channel_data_recv_tvalid))
                 begin
-                    if ((channel_command[0] && channel_data_send_tready)
-                        || (!channel_command[0] && channel_data_recv_tvalid))
+                    if (res_count == 0)
+                    begin
+                        channel_stop <= 1'b1;
+                    end
+                    else if (!x_busy)
                     begin
                         x_start <= 1'b1;
 
@@ -323,7 +327,7 @@ module axi_channel (
                     channel_data_send_tvalid <= 1'b0;
                     channel_data_recv_tready <= 1'b0;
 
-                    x_count <= x_count - 1;
+                    res_count <= res_count - 1;
                     x_addr <= x_addr + 1;
 
                     x_state <= 0;
@@ -361,17 +365,15 @@ module axi_channel (
         .a_service_out(a_service_out),
         .a_suppress_out(a_suppress_out),
 
+        .active(channel_active),
+
         .address(channel_address),
         .command(channel_command),
-        .count(channel_count),
-        .start_strobe(channel_start),
-
-        .active(channel_active),
+        .start(channel_start),
+        .stop(channel_stop),
 
         .status(channel_status),
         .status_strobe(), // TODO
-
-        .res_count(channel_res_count),
 
         .data_send_tdata(channel_data_send_tdata),
         .data_send_tvalid(channel_data_send_tvalid),

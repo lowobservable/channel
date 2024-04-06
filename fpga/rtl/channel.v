@@ -27,15 +27,14 @@ module channel (
     // ...
     input wire [7:0] address,
     input wire [7:0] command,
-    input wire [7:0] count,
-    input wire start_strobe,
 
     output wire active, // "subchannel active"
 
+    input wire start,
+    input wire stop,
+
     output reg [7:0] status,
     output reg status_strobe,
-
-    output reg [7:0] res_count,
 
     // AXI-Stream for data being sent...
     input wire [7:0] data_send_tdata,
@@ -77,7 +76,6 @@ module channel (
 
     reg [7:0] next_status;
     reg next_status_strobe;
-    reg [7:0] next_res_count;
 
     reg next_data_send_tready;
     reg [7:0] next_data_recv_tdata;
@@ -96,7 +94,6 @@ module channel (
 
         next_status = status; // TODO: hack to allow us to use status internaly
         next_status_strobe = 0;
-        next_res_count = res_count;
 
         next_data_send_tready = data_send_tready;
         next_data_recv_tdata = data_recv_tdata;
@@ -105,10 +102,8 @@ module channel (
         case (state)
             STATE_IDLE:
             begin
-                if (start_strobe)
+                if (start)
                 begin
-                    next_res_count = count; // capture the count here...
-
                     // TODO: 'Address out' can rise for device selection only
                     // when 'select out' (or 'hold out'), 'select in', 'status
                     // in', and 'operational in' are down at the channel.
@@ -231,11 +226,7 @@ module channel (
             begin
                 if (a_service_in)
                 begin
-                    if (res_count == 0)
-                    begin
-                        next_state = STATE_STOP;
-                    end
-                    else if (command[0] /* WRITE or CONTROL */) // TODO: not NOP...
+                    if (command[0] /* WRITE or CONTROL */) // TODO: not NOP...
                     begin
                         next_data_send_tready = 1'b1;
 
@@ -243,8 +234,6 @@ module channel (
                     end
                     else
                     begin
-                        $display("received byte %h from device", a_bus_in);
-
                         next_data_recv_tdata = a_bus_in;
                         next_data_recv_tvalid = 1'b1;
 
@@ -262,14 +251,20 @@ module channel (
 
             STATE_DATA_SEND_1:
             begin
-                if (data_send_tready && data_send_tvalid)
+                if (stop)
+                begin
+                    next_data_send_tready = 1'b0;
+
+                    next_state = STATE_STOP;
+                end
+                else if (data_send_tready && data_send_tvalid)
                 begin
                     next_data_send_tready = 1'b0;
 
                     next_bus_out = data_send_tdata;
                     next_service_out = 1;
 
-                    $display("sent byte %h to device", next_bus_out);
+                    $display("chan: sent byte %h to device", data_send_tdata);
 
                     next_state = STATE_DATA_SEND_2;
                 end
@@ -277,18 +272,28 @@ module channel (
 
             STATE_DATA_SEND_2:
             begin
+                next_service_out = 1;
+
                 if (!a_service_in)
                 begin
-                    next_res_count = res_count - 1;
                     next_state = STATE_SELECTED;
                 end
             end
 
             STATE_DATA_RECV_1:
             begin
-                if (data_recv_tready && data_recv_tvalid)
+                if (stop)
+                begin
+                    // TODO: this might be illegal per AXI-Stream spec...
+                    next_data_recv_tvalid = 1'b0;
+
+                    next_state = STATE_STOP;
+                end
+                else if (data_recv_tready && data_recv_tvalid)
                 begin
                     next_data_recv_tvalid = 1'b0;
+
+                    $display("chan: received byte %h from device", data_recv_tdata);
 
                     next_state = STATE_DATA_RECV_2;
                 end
@@ -300,7 +305,6 @@ module channel (
 
                 if (!a_service_in)
                 begin
-                    next_res_count = res_count - 1; // TODO: remove this
                     next_state = STATE_SELECTED;
                 end
             end
@@ -354,7 +358,6 @@ module channel (
 
         status <= next_status;
         status_strobe <= next_status_strobe;
-        res_count <= next_res_count;
 
         data_send_tready <= next_data_send_tready;
         data_recv_tdata <= next_data_recv_tdata;
@@ -366,7 +369,6 @@ module channel (
 
             status <= 0;
             status_strobe <= 0;
-            res_count <= 0;
 
             data_send_tready <= 0;
             data_recv_tvalid <= 0;
