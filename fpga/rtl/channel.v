@@ -257,7 +257,7 @@ module channel (
 
                     next_state = STATE_STOP;
                 end
-                else if (data_send_tready && data_send_tvalid)
+                else if (data_send_tvalid && data_send_tready)
                 begin
                     next_data_send_tready = 1'b0;
 
@@ -289,7 +289,7 @@ module channel (
 
                     next_state = STATE_STOP;
                 end
-                else if (data_recv_tready && data_recv_tvalid)
+                else if (data_recv_tvalid && data_recv_tready)
                 begin
                     next_data_recv_tvalid = 1'b0;
 

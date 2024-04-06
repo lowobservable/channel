@@ -27,29 +27,29 @@ module axi_mock_cu (
     input wire a_select_in,
 
     // S_AXI...
-    output reg s_axi_arready,
     input wire [7:0] s_axi_araddr,
     input wire s_axi_arvalid,
+    output reg s_axi_arready,
 
-    input wire s_axi_rready,
     output reg [31:0] s_axi_rdata,
     output reg [1:0] s_axi_rresp,
     output reg s_axi_rvalid,
+    input wire s_axi_rready,
 
-    output reg s_axi_awready,
     input wire [7:0] s_axi_awaddr,
     input wire s_axi_awvalid,
+    output reg s_axi_awready,
 
-    output reg s_axi_wready,
     input wire [31:0] s_axi_wdata,
     // verilator lint_off UNUSEDSIGNAL
     input wire [3:0] s_axi_wstrb,
     // verilator lint_on UNUSEDSIGNAL
     input wire s_axi_wvalid,
+    output reg s_axi_wready,
 
-    input wire s_axi_bready,
     output reg [1:0] s_axi_bresp,
-    output reg s_axi_bvalid
+    output reg s_axi_bvalid,
+    input wire s_axi_bready
 );
     localparam REG_CONTROL = 8'h00;
     localparam REG_STATUS = 8'h04;
@@ -71,7 +71,7 @@ module axi_mock_cu (
 
     always @(posedge aclk)
     begin
-        if (s_axi_arready && s_axi_arvalid)
+        if (s_axi_arvalid && s_axi_arready)
         begin
             s_axi_rdata <= 32'b0;
             s_axi_rresp <= 2'b00;
@@ -89,7 +89,7 @@ module axi_mock_cu (
 
             s_axi_rvalid <= 1'b1;
         end
-        else if (s_axi_rready && s_axi_rvalid)
+        else if (s_axi_rvalid && s_axi_rready)
         begin
             s_axi_rdata <= 32'b0;
             s_axi_rresp <= 2'b00;
@@ -114,7 +114,7 @@ module axi_mock_cu (
 
     always @(posedge aclk)
     begin
-        if (s_axi_awready && s_axi_awvalid)
+        if (s_axi_awvalid && s_axi_awready)
         begin
             awaddr <= s_axi_awaddr;
             awaddr_full <= 1'b1;
@@ -123,7 +123,7 @@ module axi_mock_cu (
             s_axi_awready <= 1'b0;
         end
 
-        if (s_axi_wready && s_axi_wvalid)
+        if (s_axi_wvalid && s_axi_wready)
         begin
             wdata <= s_axi_wdata;
             wdata_full <= 1'b1;
@@ -154,7 +154,7 @@ module axi_mock_cu (
             wdata_full <= 1'b0;
         end
 
-        if (s_axi_bready && s_axi_bvalid)
+        if (s_axi_bvalid && s_axi_bready)
         begin
             s_axi_awready <= 1'b1;
             s_axi_wready <= 1'b1;

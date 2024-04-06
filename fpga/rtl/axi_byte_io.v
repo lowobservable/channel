@@ -13,31 +13,31 @@ module axi_byte_io (
     output reg done,
 
     // M_AXI...
-    input wire m_axi_arready,
     output reg [31:0] m_axi_araddr,
     output reg m_axi_arvalid,
+    input wire m_axi_arready,
 
-    output reg m_axi_rready,
     input wire [63:0] m_axi_rdata,
     // verilator lint_off UNUSEDSIGNAL
     input wire [1:0] m_axi_rresp,
     // veriltor lint on UNUSEDSIGNAL
     input wire m_axi_rvalid,
+    output reg m_axi_rready,
 
-    input wire m_axi_awready,
     output reg [31:0] m_axi_awaddr,
     output reg m_axi_awvalid,
+    input wire m_axi_awready,
 
-    input wire m_axi_wready,
     output reg [63:0] m_axi_wdata,
     output reg [7:0] m_axi_wstrb,
     output reg m_axi_wvalid,
+    input wire m_axi_wready,
 
-    output reg m_axi_bready,
     // verilator lint_off UNUSEDSIGNAL
     input wire [1:0] m_axi_bresp,
     // veriltor lint on UNUSEDSIGNAL
-    input wire m_axi_bvalid
+    input wire m_axi_bvalid,
+    output reg m_axi_bready
 );
     initial
     begin
@@ -93,13 +93,13 @@ module axi_byte_io (
                 m_axi_arvalid <= !a_beat;
                 m_axi_rready <= 1'b1;
 
-                if (m_axi_arready && m_axi_arvalid)
+                if (m_axi_arvalid && m_axi_arready)
                 begin
                     a_beat <= 1'b1;
                     m_axi_arvalid <= 1'b0; // deassert cycle "early"
                 end
 
-                if (a_beat && m_axi_rready && m_axi_rvalid)
+                if (a_beat && m_axi_rvalid && m_axi_rready)
                 begin
                     m_axi_rready <= 1'b0;
 
@@ -120,13 +120,13 @@ module axi_byte_io (
                 m_axi_wvalid <= !d_beat;
                 m_axi_bready <= 1'b1;
 
-                if (m_axi_awready && m_axi_awvalid)
+                if (m_axi_awvalid && m_axi_awready)
                 begin
                     a_beat <= 1'b1;
                     m_axi_awvalid <= 1'b0; // deassert cycle "early"
                 end
 
-                if (m_axi_wready && m_axi_wvalid)
+                if (m_axi_wvalid && m_axi_wready)
                 begin
                     d_beat <= 1'b1;
                     m_axi_wvalid <= 1'b0; // deassert cycle "early"
@@ -134,7 +134,7 @@ module axi_byte_io (
 
                 // TODO: this probably isn't 100% correct but I don't think these can ALL
                 // happen on the same cycle as above.
-                if (a_beat && d_beat && m_axi_bready && m_axi_bvalid)
+                if (a_beat && d_beat && m_axi_bvalid && m_axi_bready)
                 begin
                     m_axi_bready <= 1'b0;
 

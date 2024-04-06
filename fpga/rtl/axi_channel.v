@@ -23,52 +23,52 @@ module axi_channel (
     output wire a_suppress_out,
 
     // S_AXI...
-    output reg s_axi_arready,
     input wire [7:0] s_axi_araddr,
     input wire s_axi_arvalid,
+    output reg s_axi_arready,
 
-    input wire s_axi_rready,
     output reg [31:0] s_axi_rdata,
     output reg [1:0] s_axi_rresp,
     output reg s_axi_rvalid,
+    input wire s_axi_rready,
 
-    output reg s_axi_awready,
     input wire [7:0] s_axi_awaddr,
     input wire s_axi_awvalid,
+    output reg s_axi_awready,
 
-    output reg s_axi_wready,
     input wire [31:0] s_axi_wdata,
     // verilator lint_off UNUSEDSIGNAL
     input wire [3:0] s_axi_wstrb,
     // verilator lint_on UNUSEDSIGNAL
     input wire s_axi_wvalid,
+    output reg s_axi_wready,
 
-    input wire s_axi_bready,
     output reg [1:0] s_axi_bresp,
     output reg s_axi_bvalid,
+    input wire s_axi_bready,
 
     // M_AXI...
-    input wire m_axi_arready,
     output wire [31:0] m_axi_araddr,
     output wire m_axi_arvalid,
+    input wire m_axi_arready,
 
-    output wire m_axi_rready,
     input wire [63:0] m_axi_rdata,
     input wire [1:0] m_axi_rresp,
     input wire m_axi_rvalid,
+    output wire m_axi_rready,
 
-    input wire m_axi_awready,
     output wire [31:0] m_axi_awaddr,
     output wire m_axi_awvalid,
+    input wire m_axi_awready,
 
-    input wire m_axi_wready,
     output wire [63:0] m_axi_wdata,
     output wire [7:0] m_axi_wstrb,
     output wire m_axi_wvalid,
+    input wire m_axi_wready,
 
-    output wire m_axi_bready,
     input wire [1:0] m_axi_bresp,
-    input wire m_axi_bvalid
+    input wire m_axi_bvalid,
+    output wire m_axi_bready
 );
     localparam REG_CONTROL = 8'h00;
     localparam REG_STATUS = 8'h04;
@@ -98,7 +98,7 @@ module axi_channel (
 
     always @(posedge aclk)
     begin
-        if (s_axi_arready && s_axi_arvalid)
+        if (s_axi_arvalid && s_axi_arready)
         begin
             s_axi_rdata <= 32'b0;
             s_axi_rresp <= 2'b00;
@@ -119,7 +119,7 @@ module axi_channel (
 
             s_axi_rvalid <= 1'b1;
         end
-        else if (s_axi_rready && s_axi_rvalid)
+        else if (s_axi_rvalid && s_axi_rready)
         begin
             s_axi_rdata <= 32'b0;
             s_axi_rresp <= 2'b00;
@@ -148,7 +148,7 @@ module axi_channel (
         reset <= 1'b0;
         channel_start <= 1'b0;
 
-        if (s_axi_awready && s_axi_awvalid)
+        if (s_axi_awvalid && s_axi_awready)
         begin
             awaddr <= s_axi_awaddr;
             awaddr_full <= 1'b1;
@@ -157,7 +157,7 @@ module axi_channel (
             s_axi_awready <= 1'b0;
         end
 
-        if (s_axi_wready && s_axi_wvalid)
+        if (s_axi_wvalid && s_axi_wready)
         begin
             wdata <= s_axi_wdata;
             wdata_full <= 1'b1;
@@ -194,7 +194,7 @@ module axi_channel (
             wdata_full <= 1'b0;
         end
 
-        if (s_axi_bready && s_axi_bvalid)
+        if (s_axi_bvalid && s_axi_bready)
         begin
             s_axi_awready <= 1'b1;
             s_axi_wready <= 1'b1;
@@ -243,27 +243,27 @@ module axi_channel (
         .start(x_start),
         .done(x_done),
 
-        .m_axi_arready(m_axi_arready),
         .m_axi_araddr(m_axi_araddr),
         .m_axi_arvalid(m_axi_arvalid),
+        .m_axi_arready(m_axi_arready),
 
-        .m_axi_rready(m_axi_rready),
         .m_axi_rdata(m_axi_rdata),
         .m_axi_rresp(m_axi_rresp),
         .m_axi_rvalid(m_axi_rvalid),
+        .m_axi_rready(m_axi_rready),
 
-        .m_axi_awready(m_axi_awready),
         .m_axi_awaddr(m_axi_awaddr),
         .m_axi_awvalid(m_axi_awvalid),
+        .m_axi_awready(m_axi_awready),
 
-        .m_axi_wready(m_axi_wready),
         .m_axi_wdata(m_axi_wdata),
         .m_axi_wstrb(m_axi_wstrb),
         .m_axi_wvalid(m_axi_wvalid),
+        .m_axi_wready(m_axi_wready),
 
-        .m_axi_bready(m_axi_bready),
         .m_axi_bresp(m_axi_bresp),
-        .m_axi_bvalid(m_axi_bvalid)
+        .m_axi_bvalid(m_axi_bvalid),
+        .m_axi_bready(m_axi_bready)
     );
 
     reg [7:0] x_state;
@@ -320,8 +320,8 @@ module axi_channel (
 
             2: // wait on channel completion
             begin
-                if ((channel_command[0] && channel_data_send_tready && channel_data_send_tvalid)
-                    || (!channel_command[0] && channel_data_recv_tready && channel_data_recv_tvalid))
+                if ((channel_command[0] && channel_data_send_tvalid && channel_data_send_tready)
+                    || (!channel_command[0] && channel_data_recv_tvalid && channel_data_recv_tready))
                 begin
                     // Deassert these immediately...
                     channel_data_send_tvalid <= 1'b0;
