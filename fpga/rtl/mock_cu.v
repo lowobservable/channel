@@ -32,10 +32,10 @@ module mock_cu (
 
     // ...
     input wire mock_busy,
-    input wire [7:0] mock_limit,
+    input wire [15:0] mock_limit,
 
     output reg [7:0] command,
-    output reg [7:0] count
+    output reg [15:0] count
 );
     parameter ADDRESS = 8'hff;
     parameter ENABLE_SHORT_BUSY = 0;
@@ -196,7 +196,7 @@ module mock_cu (
                 begin
                     //if (!b_suppress_out)
                     //begin
-                        b_bus_in <= count + 1;
+                        b_bus_in <= count[7:0] + 1;
                         b_service_in <= 1;
 
                         if (b_command_out)

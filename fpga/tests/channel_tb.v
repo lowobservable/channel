@@ -68,7 +68,7 @@ module channel_tb;
     wire terminator;
 
     reg cu_mock_busy = 0;
-    reg [7:0] cu_mock_limit = 0;
+    reg [15:0] cu_mock_limit = 0;
 
     mock_cu #(
         .ADDRESS(8'h1a),

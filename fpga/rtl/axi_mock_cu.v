@@ -65,9 +65,9 @@ module axi_mock_cu (
     end
 
     reg mock_busy;
-    reg [7:0] mock_limit;
+    reg [15:0] mock_limit;
     wire [7:0] command;
-    wire [7:0] count;
+    wire [15:0] count;
 
     always @(posedge aclk)
     begin
@@ -78,10 +78,10 @@ module axi_mock_cu (
 
             case (s_axi_araddr)
                 REG_CONTROL:
-                    s_axi_rdata <= { 16'b0, mock_limit, 6'b0, mock_busy, 1'b0 };
+                    s_axi_rdata <= { mock_limit, 14'b0, mock_busy, 1'b0 };
 
                 REG_STATUS:
-                    s_axi_rdata <= { 8'b0, count, command, 8'b0 };
+                    s_axi_rdata <= { count, command, 8'b0 };
 
                 default:
                     s_axi_rresp <= 2'b10; // SLVERR
@@ -141,7 +141,7 @@ module axi_mock_cu (
                 REG_CONTROL:
                 begin
                     mock_busy <= wdata[1];
-                    mock_limit <= wdata[15:8];
+                    mock_limit <= wdata[31:16];
                 end
 
                 default:

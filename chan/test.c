@@ -12,10 +12,10 @@
 #include "chan.h"
 #include "mock_cu.h"
 
-int test_read_command(char *case_name, struct chan *chan, uint8_t count,
-        struct mock_cu *mock_cu, uint8_t mock_cu_limit, uint8_t expected_count);
-int test_write_command(char *case_name, struct chan *chan, uint8_t count,
-        struct mock_cu *mock_cu, uint8_t mock_cu_limit, uint8_t expected_count);
+int test_read_command(char *case_name, struct chan *chan, uint16_t count,
+        struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
+int test_write_command(char *case_name, struct chan *chan, uint16_t count,
+        struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
 
 void buf_arrange(uint8_t *buf, size_t count);
 int buf_assert(uint8_t *buf, size_t count);
@@ -49,6 +49,7 @@ int main(void)
     test_read_command("read_command_cu_less", &chan, 16, &mock_cu, 6, 6);
     test_write_command("write_command_cu_more", &chan, 6, &mock_cu, 16, 6);
     test_write_command("write_command_cu_less", &chan, 16, &mock_cu, 6, 6);
+    test_read_command("big_read", &chan, 512, &mock_cu, 512, 512);
 
     mock_cu_close(&mock_cu);
 
@@ -57,8 +58,8 @@ int main(void)
     close(mem_fd);
 }
 
-int test_read_command(char *case_name, struct chan *chan, uint8_t count,
-        struct mock_cu *mock_cu, uint8_t mock_cu_limit, uint8_t expected_count)
+int test_read_command(char *case_name, struct chan *chan, uint16_t count,
+        struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
 {
     printf("TEST: %s\n", case_name);
 
@@ -98,8 +99,8 @@ int test_read_command(char *case_name, struct chan *chan, uint8_t count,
     return 0;
 }
 
-int test_write_command(char *case_name, struct chan *chan, uint8_t count,
-        struct mock_cu *mock_cu, uint8_t mock_cu_limit, uint8_t expected_count)
+int test_write_command(char *case_name, struct chan *chan, uint16_t count,
+        struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
 {
     printf("TEST: %s\n", case_name);
 
@@ -147,7 +148,7 @@ int buf_assert(uint8_t *buf, size_t count)
     int bad_count = 0;
 
     for (size_t index = 0; index < count; index++) {
-        if (buf[index] != index + 1) {
+        if (buf[index] != (uint8_t) (index + 1)) {
             bad_count++;
         }
     }
