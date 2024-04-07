@@ -33,8 +33,9 @@ module channel (
     input wire start,
     input wire stop,
 
-    output reg [7:0] status,
-    output reg status_strobe,
+    // AXI-Stream for status...
+    output reg [7:0] status_tdata,
+    output reg status_tvalid,
 
     // AXI-Stream for data being sent...
     input wire [7:0] data_send_tdata,
@@ -74,9 +75,8 @@ module channel (
     reg next_command_out;
     reg next_service_out;
 
-    reg [7:0] next_status;
-    reg next_status_strobe;
-
+    reg [7:0] next_status_tdata;
+    reg next_status_tvalid;
     reg next_data_send_tready;
     reg [7:0] next_data_recv_tdata;
     reg next_data_recv_tvalid;
@@ -92,9 +92,8 @@ module channel (
         next_command_out = 0;
         next_service_out = 0;
 
-        next_status = status; // TODO: hack to allow us to use status internaly
-        next_status_strobe = 0;
-
+        next_status_tdata = status_tdata;
+        next_status_tvalid = 0; // Will always be a 1-clock pulse
         next_data_send_tready = data_send_tready;
         next_data_recv_tdata = data_recv_tdata;
         next_data_recv_tvalid = data_recv_tvalid;
@@ -189,11 +188,11 @@ module channel (
             begin
                 if (a_status_in)
                 begin
-                    next_status = a_bus_in;
-                    next_status_strobe = 1;
-
                     // NOTE: for now we always "accept" status - we'll check in
                     // the next state what the status represents...
+                    next_status_tdata = a_bus_in;
+                    next_status_tvalid = 1;
+
                     next_state = STATE_SELECTION_SERVICE_OUT;
                 end
             end
@@ -211,7 +210,7 @@ module channel (
                     begin
                         next_state = STATE_IDLE;
                     end
-                    else if (status == 8'h00)
+                    else if (status_tdata == 8'h00)
                     begin
                         next_state = STATE_SELECTED;
                     end
@@ -242,8 +241,8 @@ module channel (
                 end
                 else if (a_status_in)
                 begin
-                    next_status = a_bus_in;
-                    next_status_strobe = 1;
+                    next_status_tdata = a_bus_in;
+                    next_status_tvalid = 1;
 
                     next_state = STATE_ENDING;
                 end
@@ -326,7 +325,7 @@ module channel (
 
                 if (!a_status_in)
                 begin
-                    if (status[5]) // DE
+                    if (status_tdata[5]) // DE
                     begin
                         next_state = STATE_IDLE;
                     end
@@ -342,6 +341,7 @@ module channel (
     always @(posedge clk)
     begin
         state <= next_state;
+
         state_timer <= state_timer + 1;
 
         if (state != next_state)
@@ -356,9 +356,8 @@ module channel (
         a_command_out <= next_command_out;
         a_service_out <= next_service_out;
 
-        status <= next_status;
-        status_strobe <= next_status_strobe;
-
+        status_tdata <= next_status_tdata;
+        status_tvalid <= next_status_tvalid;
         data_send_tready <= next_data_send_tready;
         data_recv_tdata <= next_data_recv_tdata;
         data_recv_tvalid <= next_data_recv_tvalid;
@@ -367,9 +366,9 @@ module channel (
         begin
             state <= STATE_IDLE;
 
-            status <= 0;
-            status_strobe <= 0;
+            state_timer <= 0;
 
+            status_tvalid <= 0;
             data_send_tready <= 0;
             data_recv_tvalid <= 0;
         end

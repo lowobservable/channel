@@ -93,7 +93,10 @@ module axi_channel (
     reg [31:0] dma_addr;
     reg channel_start = 1'b0;
     reg channel_stop = 1'b0;
-    wire [7:0] channel_status;
+    wire [7:0] channel_status_tdata;
+    wire channel_status_tvalid;
+    reg [7:0] device_status;
+
     reg [7:0] res_count;
 
     always @(posedge aclk)
@@ -108,7 +111,7 @@ module axi_channel (
                     s_axi_rdata <= { channel_address, channel_command, channel_count, 6'b0, channel_start || channel_active, reset };
 
                 REG_STATUS:
-                    s_axi_rdata <= { channel_status, 8'b0, res_count, 6'b0, channel_active, 1'b0 };
+                    s_axi_rdata <= { device_status, 8'b0, res_count, 6'b0, channel_active, 1'b0 };
 
                 REG_DMA_ADDR:
                     s_axi_rdata <= dma_addr;
@@ -270,11 +273,29 @@ module axi_channel (
 
     always @(posedge aclk)
     begin
-        // Capture the DMA address and count when the channel starts.
         if (channel_start)
         begin
-            res_count <= channel_count;
+            device_status <= 8'b00000000;
+        end
+
+        if (channel_status_tvalid)
+        begin
+            device_status <= channel_status_tdata;
+        end
+
+        if (!aresetn)
+        begin
+            device_status <= 8'b00000000;
+        end
+    end
+
+    always @(posedge aclk)
+    begin
+        if (channel_start)
+        begin
+            // Capture the DMA address and count when the channel starts.
             x_addr <= dma_addr;
+            res_count <= channel_count;
         end
 
         channel_stop <= 1'b0;
@@ -372,8 +393,8 @@ module axi_channel (
         .start(channel_start),
         .stop(channel_stop),
 
-        .status(channel_status),
-        .status_strobe(), // TODO
+        .status_tdata(channel_status_tdata),
+        .status_tvalid(channel_status_tvalid),
 
         .data_send_tdata(channel_data_send_tdata),
         .data_send_tvalid(channel_data_send_tvalid),
