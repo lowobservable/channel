@@ -13,8 +13,10 @@
 #define REGS_SIZE 1024
 
 #define REG_CONTROL 0
-#define REG_STATUS 1
-#define REG_DMA_ADDR 2
+#define REG_STATUS_1 1
+#define REG_STATUS_2 2
+#define REG_CCW_1 3
+#define REG_CCW_2 4
 
 static inline bool is_read_cmd(uint8_t cmd);
 static inline bool is_write_cmd(uint8_t cmd);
@@ -59,11 +61,15 @@ int chan_close(struct chan *chan)
 
 ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
 {
+    if (count > UINT16_MAX) {
+        return -1;
+    }
+
     if (count > chan->udmabuf.size) {
         return -1;
     }
 
-    if (chan->regs[REG_STATUS] & 2) {
+    if (chan->regs[REG_STATUS_1] & 2) {
         return -1;
     }
 
@@ -71,16 +77,18 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
         udmabuf_copy_to_dma(&chan->udmabuf, buf, count);
     }
 
-    chan->regs[REG_DMA_ADDR] = chan->udmabuf.addr;
-    chan->regs[REG_CONTROL] = (addr << 24) | (cmd << 16) | (count << 8) | 0x02; // Start...
+    chan->regs[REG_CCW_1] = (cmd << 24) | (uint16_t) count;
+    chan->regs[REG_CCW_2] = chan->udmabuf.addr;
 
-    while (chan->regs[REG_STATUS] & 2) {
+    chan->regs[REG_CONTROL] = (addr << 24) | 0x02; // Start...
+
+    while (chan->regs[REG_STATUS_1] & 2) {
         usleep(100);
     }
 
-    uint32_t value = chan->regs[REG_STATUS];
+    uint32_t status_2 = chan->regs[REG_STATUS_2];
 
-    uint8_t device_status = (uint8_t) (value >> 24);
+    uint8_t device_status = (uint8_t) (status_2 >> 24);
 
     if (device_status != 0x30) {
         printf("device_status = 0x%.2x\n", device_status);
@@ -88,7 +96,7 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
     }
 
     // The count in the status register is a "residual" count.
-    size_t actual_count = count - (uint8_t) (value >> 8);
+    size_t actual_count = count - (uint16_t) status_2;
 
     if (is_read_cmd(cmd)) {
         udmabuf_copy_from_dma(&chan->udmabuf, buf, actual_count);

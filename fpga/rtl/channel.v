@@ -25,7 +25,7 @@ module channel (
     output reg a_suppress_out = 1'b0,
 
     // ...
-    input wire [7:0] address,
+    input wire [7:0] addr,
     input wire [7:0] command,
 
     output wire active, // "subchannel active"
@@ -116,7 +116,7 @@ module channel (
                 // the I/O-device address is placed on 'bus out' or at least
                 // 250 nanoseconds after the rise of 'operational out',
                 // whichever occurs later.
-                next_bus_out = address;
+                next_bus_out = addr;
                 next_address_out = 1;
 
                 // SPEC: When an operation is being initiated by the channel,
@@ -131,7 +131,7 @@ module channel (
 
             STATE_SELECTION_SELECT_OUT:
             begin
-                next_bus_out = address;
+                next_bus_out = addr;
                 next_address_out = 1;
                 next_hold_out = 1; // TODO: Can this be done at the same time?
                 next_select_out = 1;
@@ -158,7 +158,7 @@ module channel (
                 next_select_out = 1;
 
                 // TODO: what happens if bus_in != addres???
-                if (a_address_in && a_bus_in == address)
+                if (a_address_in && a_bus_in == addr)
                 begin
                     next_state = STATE_SELECTION_COMMAND_OUT;
                 end

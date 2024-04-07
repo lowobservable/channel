@@ -21,7 +21,7 @@ module channel_tb;
     wire service_out;
     wire suppress_out;
 
-    reg [7:0] channel_address;
+    reg [7:0] channel_addr;
     reg [7:0] channel_command;
     reg channel_start = 0;
     reg channel_stop = 0;
@@ -53,7 +53,7 @@ module channel_tb;
         .a_service_out(service_out),
         .a_suppress_out(suppress_out),
 
-        .address(channel_address),
+        .addr(channel_addr),
         .command(channel_command),
         .start(channel_start),
         .stop(channel_stop),
@@ -297,12 +297,12 @@ module channel_tb;
     endtask
 
     task start_channel (
-        input [7:0] address,
+        input [7:0] addr,
         input [7:0] command,
         input [7:0] count
     );
     begin
-        channel_address = address;
+        channel_addr = addr;
         channel_command = command;
         channel_count = count;
 

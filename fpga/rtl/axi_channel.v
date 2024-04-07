@@ -71,8 +71,10 @@ module axi_channel (
     output wire m_axi_bready
 );
     localparam REG_CONTROL = 8'h00;
-    localparam REG_STATUS = 8'h04;
-    localparam REG_DMA_ADDR = 8'h08;
+    localparam REG_STATUS_1 = 8'h04;
+    localparam REG_STATUS_2 = 8'h08;
+    localparam REG_CCW_1 = 8'h0c;
+    localparam REG_CCW_2 = 8'h10;
 
     initial
     begin
@@ -87,17 +89,64 @@ module axi_channel (
     reg reset = 1'b0;
 
     wire channel_active;
-    reg [7:0] channel_address;
-    reg [7:0] channel_command;
-    reg [7:0] channel_count;
-    reg [31:0] dma_addr;
+    reg [7:0] channel_addr;
     reg channel_start = 1'b0;
     reg channel_stop = 1'b0;
     wire [7:0] channel_status_tdata;
     wire channel_status_tvalid;
-    reg [7:0] device_status;
+    wire [7:0] channel_data_send_tdata;
+    reg channel_data_send_tvalid;
+    wire channel_data_send_tready;
+    wire [7:0] channel_data_recv_tdata;
+    wire channel_data_recv_tvalid;
+    reg channel_data_recv_tready;
 
-    reg [7:0] res_count;
+    reg [7:0] ccw_command;
+    reg [15:0] ccw_count;
+    reg [31:0] ccw_data_addr;
+
+    reg [7:0] device_status;
+    reg [15:0] count;
+
+    channel channel (
+        .clk(aclk),
+        .reset(reset),
+
+        .a_bus_in(a_bus_in),
+        .a_bus_out(a_bus_out),
+
+        .a_operational_out(a_operational_out),
+        .a_request_in(a_request_in),
+        .a_hold_out(a_hold_out),
+        .a_select_out(a_select_out),
+        .a_select_in(a_select_in),
+        .a_address_out(a_address_out),
+        .a_operational_in(a_operational_in),
+        .a_address_in(a_address_in),
+        .a_command_out(a_command_out),
+        .a_status_in(a_status_in),
+        .a_service_in(a_service_in),
+        .a_service_out(a_service_out),
+        .a_suppress_out(a_suppress_out),
+
+        .active(channel_active),
+
+        .addr(channel_addr),
+        .command(ccw_command),
+        .start(channel_start),
+        .stop(channel_stop),
+
+        .status_tdata(channel_status_tdata),
+        .status_tvalid(channel_status_tvalid),
+
+        .data_send_tdata(channel_data_send_tdata),
+        .data_send_tvalid(channel_data_send_tvalid),
+        .data_send_tready(channel_data_send_tready),
+
+        .data_recv_tdata(channel_data_recv_tdata),
+        .data_recv_tvalid(channel_data_recv_tvalid),
+        .data_recv_tready(channel_data_recv_tready)
+    );
 
     always @(posedge aclk)
     begin
@@ -108,13 +157,19 @@ module axi_channel (
 
             case (s_axi_araddr)
                 REG_CONTROL:
-                    s_axi_rdata <= { channel_address, channel_command, channel_count, 6'b0, channel_start || channel_active, reset };
+                    s_axi_rdata <= { channel_addr, 22'b0, channel_start || channel_active, reset };
 
-                REG_STATUS:
-                    s_axi_rdata <= { device_status, 8'b0, res_count, 6'b0, channel_active, 1'b0 };
+                REG_STATUS_1:
+                    s_axi_rdata <= { 30'b0, channel_active, 1'b0 };
 
-                REG_DMA_ADDR:
-                    s_axi_rdata <= dma_addr;
+                REG_STATUS_2:
+                    s_axi_rdata <= { device_status, 8'b0, count };
+
+                REG_CCW_1:
+                    s_axi_rdata <= { ccw_command, 8'b0, ccw_count };
+
+                REG_CCW_2:
+                    s_axi_rdata <= ccw_data_addr;
 
                 default:
                     s_axi_rresp <= 2'b10; // SLVERR
@@ -178,14 +233,19 @@ module axi_channel (
                 REG_CONTROL:
                 begin
                     reset <= wdata[0];
+
+                    channel_addr <= wdata[31:24];
                     channel_start <= wdata[1];
-                    channel_address <= wdata[31:24];
-                    channel_command <= wdata[23:16];
-                    channel_count <= wdata[15:8];
                 end
 
-                REG_DMA_ADDR:
-                    dma_addr <= wdata;
+                REG_CCW_1:
+                begin
+                    ccw_command <= wdata[31:24];
+                    ccw_count <= wdata[15:0];
+                end
+
+                REG_CCW_2:
+                    ccw_data_addr <= wdata;
 
                 default:
                     s_axi_bresp <= 2'b10; // SLVERR
@@ -209,6 +269,7 @@ module axi_channel (
         if (!aresetn)
         begin
             reset <= 1'b1;
+
             channel_start <= 1'b0;
 
             awaddr_full <= 1'b0;
@@ -221,30 +282,41 @@ module axi_channel (
         end
     end
 
-    wire x_busy;
-    reg [31:0] x_addr;
-    reg x_start;
-    wire x_done;
+    always @(posedge aclk)
+    begin
+        if (channel_start)
+        begin
+            device_status <= 8'b0;
+        end
 
-    wire [7:0] channel_data_send_tdata;
-    reg channel_data_send_tvalid;
-    wire channel_data_send_tready;
+        if (channel_status_tvalid)
+        begin
+            device_status <= channel_status_tdata;
+        end
 
-    wire [7:0] channel_data_recv_tdata;
-    wire channel_data_recv_tvalid;
-    reg channel_data_recv_tready;
+        if (!aresetn)
+        begin
+            device_status <= 8'b0;
+        end
+    end
+
+    reg [7:0] dma_state;
+    wire dma_busy;
+    reg [31:0] dma_addr;
+    reg dma_start;
+    wire dma_done;
 
     axi_byte_io axi_byte_io (
         .aclk(aclk),
         .aresetn(aresetn),
 
-        .busy(x_busy),
-        .write(!channel_command[0]), // READ command WRITES, WRITE command READS...
-        .addr(x_addr),
+        .busy(dma_busy),
+        .write(!ccw_command[0]), // READ command WRITES, WRITE command READS...
+        .addr(dma_addr),
         .data_read(channel_data_send_tdata),
         .data_write(channel_data_recv_tdata),
-        .start(x_start),
-        .done(x_done),
+        .start(dma_start),
+        .done(dma_done),
 
         .m_axi_araddr(m_axi_araddr),
         .m_axi_arvalid(m_axi_arvalid),
@@ -269,39 +341,19 @@ module axi_channel (
         .m_axi_bready(m_axi_bready)
     );
 
-    reg [7:0] x_state;
-
     always @(posedge aclk)
     begin
         if (channel_start)
         begin
-            device_status <= 8'b00000000;
-        end
-
-        if (channel_status_tvalid)
-        begin
-            device_status <= channel_status_tdata;
-        end
-
-        if (!aresetn)
-        begin
-            device_status <= 8'b00000000;
-        end
-    end
-
-    always @(posedge aclk)
-    begin
-        if (channel_start)
-        begin
-            // Capture the DMA address and count when the channel starts.
-            x_addr <= dma_addr;
-            res_count <= channel_count;
+            // Capture the DMA address and count from the CCW when the channel starts.
+            dma_addr <= ccw_data_addr;
+            count <= ccw_count;
         end
 
         channel_stop <= 1'b0;
-        x_start <= 1'b0;
+        dma_start <= 1'b0;
 
-        case (x_state)
+        case (dma_state)
             0:
             begin
                 // TODO: we use TREADY to indicate that the read has been "accepted", confirm
@@ -309,49 +361,49 @@ module axi_channel (
                 channel_data_send_tvalid <= 1'b0;
                 channel_data_recv_tready <= 1'b0;
 
-                if ((channel_command[0] && channel_data_send_tready)
-                    || (!channel_command[0] && channel_data_recv_tvalid))
+                if ((ccw_command[0] && channel_data_send_tready)
+                    || (!ccw_command[0] && channel_data_recv_tvalid))
                 begin
-                    if (res_count == 0)
+                    if (count == 0)
                     begin
                         channel_stop <= 1'b1;
                     end
-                    else if (!x_busy)
+                    else if (!dma_busy)
                     begin
-                        x_start <= 1'b1;
+                        dma_start <= 1'b1;
 
-                        x_state <= 1;
+                        dma_state <= 1;
                     end
                 end
             end
 
             1: // wait on DMA completion
             begin
-                if (x_done)
+                if (dma_done)
                 begin
                     // let the channel know using TVALID or TREADY depending on direction
-                    if (channel_command[0])
+                    if (ccw_command[0])
                         channel_data_send_tvalid <= 1'b1;
                     else
                         channel_data_recv_tready <= 1'b1;
 
-                    x_state <= 2;
+                    dma_state <= 2;
                 end
             end
 
             2: // wait on channel completion
             begin
-                if ((channel_command[0] && channel_data_send_tvalid && channel_data_send_tready)
-                    || (!channel_command[0] && channel_data_recv_tvalid && channel_data_recv_tready))
+                if ((ccw_command[0] && channel_data_send_tvalid && channel_data_send_tready)
+                    || (!ccw_command[0] && channel_data_recv_tvalid && channel_data_recv_tready))
                 begin
                     // Deassert these immediately...
                     channel_data_send_tvalid <= 1'b0;
                     channel_data_recv_tready <= 1'b0;
 
-                    res_count <= res_count - 1;
-                    x_addr <= x_addr + 1;
+                    count <= count - 1;
+                    dma_addr <= dma_addr + 1;
 
-                    x_state <= 0;
+                    dma_state <= 0;
                 end
             end
         endcase
@@ -361,47 +413,7 @@ module axi_channel (
             channel_data_send_tvalid <= 1'b0;
             channel_data_recv_tready <= 1'b0;
 
-            x_state <= 0;
+            dma_state <= 0;
         end
     end
-
-    channel channel (
-        .clk(aclk),
-        .reset(reset),
-
-        .a_bus_in(a_bus_in),
-        .a_bus_out(a_bus_out),
-
-        .a_operational_out(a_operational_out),
-        .a_request_in(a_request_in),
-        .a_hold_out(a_hold_out),
-        .a_select_out(a_select_out),
-        .a_select_in(a_select_in),
-        .a_address_out(a_address_out),
-        .a_operational_in(a_operational_in),
-        .a_address_in(a_address_in),
-        .a_command_out(a_command_out),
-        .a_status_in(a_status_in),
-        .a_service_in(a_service_in),
-        .a_service_out(a_service_out),
-        .a_suppress_out(a_suppress_out),
-
-        .active(channel_active),
-
-        .address(channel_address),
-        .command(channel_command),
-        .start(channel_start),
-        .stop(channel_stop),
-
-        .status_tdata(channel_status_tdata),
-        .status_tvalid(channel_status_tvalid),
-
-        .data_send_tdata(channel_data_send_tdata),
-        .data_send_tvalid(channel_data_send_tvalid),
-        .data_send_tready(channel_data_send_tready),
-
-        .data_recv_tdata(channel_data_recv_tdata),
-        .data_recv_tvalid(channel_data_recv_tvalid),
-        .data_recv_tready(channel_data_recv_tready)
-    );
 endmodule
