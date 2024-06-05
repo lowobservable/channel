@@ -23,8 +23,22 @@ module axi_mock_cu (
     input wire b_suppress_out,
 
     // Parallel Channel "A"...
+    input wire [7:0] a_bus_in,
+    output wire [7:0] a_bus_out,
+
+    output wire a_operational_out,
+    input wire a_request_in,
+    output wire a_hold_out,
     output wire a_select_out,
     input wire a_select_in,
+    output wire a_address_out,
+    input wire a_operational_in,
+    input wire a_address_in,
+    output wire a_command_out,
+    input wire a_status_in,
+    input wire a_service_in,
+    output wire a_service_out,
+    output wire a_suppress_out,
 
     // S_AXI...
     input wire [7:0] s_axi_araddr,
@@ -181,7 +195,6 @@ module axi_mock_cu (
 
         .b_bus_in(b_bus_in),
         .b_bus_out(b_bus_out),
-
         .b_operational_out(b_operational_out),
         .b_request_in(b_request_in),
         .b_hold_out(b_hold_out),
@@ -196,8 +209,21 @@ module axi_mock_cu (
         .b_service_out(b_service_out),
         .b_suppress_out(b_suppress_out),
 
+        .a_bus_in(a_bus_in),
+        .a_bus_out(a_bus_out),
+        .a_operational_out(a_operational_out),
+        .a_request_in(a_request_in),
+        .a_hold_out(a_hold_out),
         .a_select_out(a_select_out),
         .a_select_in(a_select_in),
+        .a_address_out(a_address_out),
+        .a_operational_in(a_operational_in),
+        .a_address_in(a_address_in),
+        .a_command_out(a_command_out),
+        .a_status_in(a_status_in),
+        .a_service_in(a_service_in),
+        .a_service_out(a_service_out),
+        .a_suppress_out(a_suppress_out),
 
         .mock_busy(mock_busy),
         .mock_limit(mock_limit),

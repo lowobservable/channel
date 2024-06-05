@@ -92,8 +92,21 @@ module channel_tb;
         .b_service_out(service_out),
         .b_suppress_out(suppress_out),
 
+        .a_bus_in(8'b0),
+        .a_bus_out(),
+        .a_operational_out(),
+        .a_request_in(1'b0),
+        .a_hold_out(),
         .a_select_out(terminator),
         .a_select_in(terminator),
+        .a_address_out(),
+        .a_operational_in(1'b0),
+        .a_address_in(1'b0),
+        .a_command_out(),
+        .a_status_in(1'b0),
+        .a_service_in(1'b0),
+        .a_service_out(),
+        .a_suppress_out(),
 
         .mock_busy(cu_mock_busy),
         .mock_limit(cu_mock_limit)
@@ -156,7 +169,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h02 /* READ */, 6);
 
-        #60;
+        #100;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -177,7 +190,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h02 /* READ */, 6);
 
-        #200;
+        #300;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -200,7 +213,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h02 /* READ */, 16);
 
-        #200;
+        #300;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -223,7 +236,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h01 /* WRITE */, 6);
 
-        #200;
+        #300;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -246,7 +259,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h01 /* WRITE */, 16);
 
-        #200;
+        #300;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -268,7 +281,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h03 /* NOP */, 0);
 
-        #60;
+        #100;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -288,7 +301,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'hff, 6);
 
-        #60;
+        #100;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 

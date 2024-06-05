@@ -5,30 +5,40 @@ module mock_cu (
     input wire reset,
 
     // Parallel Channel "B"...
-    // verilator lint_off UNUSEDSIGNAL
-    output reg [7:0] b_bus_in,
+    output wire [7:0] b_bus_in,
     input wire [7:0] b_bus_out,
 
     input wire b_operational_out,
-    output reg b_request_in = 1'b0,
+    output wire b_request_in,
     input wire b_hold_out,
     input wire b_select_out,
-    output reg b_select_in,
+    output wire b_select_in,
     input wire b_address_out,
-    output reg b_operational_in,
-    output reg b_address_in,
+    output wire b_operational_in,
+    output wire b_address_in,
     input wire b_command_out,
-    output reg b_status_in,
-    output reg b_service_in,
+    output wire b_status_in,
+    output wire b_service_in,
     input wire b_service_out,
     input wire b_suppress_out,
-    // verilator lint_on UNUSEDSIGNAL
 
     // Parallel Channel "A"...
-    // verilator lint_off UNUSEDSIGNAL
-    output reg a_select_out,
+    input wire [7:0] a_bus_in,
+    output wire [7:0] a_bus_out,
+
+    output wire a_operational_out,
+    input wire a_request_in,
+    output wire a_hold_out,
+    output wire a_select_out,
     input wire a_select_in,
-    // verilator lint_on UNUSEDSIGNAL
+    output wire a_address_out,
+    input wire a_operational_in,
+    input wire a_address_in,
+    output wire a_command_out,
+    input wire a_status_in,
+    input wire a_service_in,
+    output wire a_service_out,
+    output wire a_suppress_out,
 
     // ...
     input wire mock_busy,
@@ -40,21 +50,92 @@ module mock_cu (
     parameter ADDRESS = 8'hff;
     parameter ENABLE_SHORT_BUSY = 0;
 
+    reg [7:0] bus_in;
+    wire [7:0] bus_out;
+    wire operational_out;
+    reg request_in;
+    wire address_out;
+    reg operational_in;
+    reg address_in;
+    wire command_out;
+    reg status_in;
+    reg service_in;
+    wire service_out;
+    wire selection_x;
+    reg selection_y;
+
+    tee tee (
+        .clk(clk),
+
+        .b_bus_in(b_bus_in),
+        .b_bus_out(b_bus_out),
+        .b_operational_out(b_operational_out),
+        .b_request_in(b_request_in),
+        .b_hold_out(b_hold_out),
+        .b_select_out(b_select_out),
+        .b_select_in(b_select_in),
+        .b_address_out(b_address_out),
+        .b_operational_in(b_operational_in),
+        .b_address_in(b_address_in),
+        .b_command_out(b_command_out),
+        .b_status_in(b_status_in),
+        .b_service_in(b_service_in),
+        .b_service_out(b_service_out),
+        .b_suppress_out(b_suppress_out),
+
+        .a_bus_in(a_bus_in),
+        .a_bus_out(a_bus_out),
+        .a_operational_out(a_operational_out),
+        .a_request_in(a_request_in),
+        .a_hold_out(a_hold_out),
+        .a_select_out(a_select_out),
+        .a_select_in(a_select_in),
+        .a_address_out(a_address_out),
+        .a_operational_in(a_operational_in),
+        .a_address_in(a_address_in),
+        .a_command_out(a_command_out),
+        .a_status_in(a_status_in),
+        .a_service_in(a_service_in),
+        .a_service_out(a_service_out),
+        .a_suppress_out(a_suppress_out),
+
+        .bus_in(bus_in),
+        .bus_out(bus_out),
+        .operational_out(operational_out),
+        .request_in(request_in),
+        .hold_out(), // TODO
+        .address_out(address_out),
+        .operational_in(operational_in),
+        .address_in(address_in),
+        .command_out(command_out),
+        .status_in(status_in),
+        .service_in(service_in),
+        .service_out(service_out),
+        .suppress_out(), // TODO
+
+        .selection_x(selection_x),
+        .selection_y(selection_y)
+    );
+
     reg [7:0] state = 0;
 
     reg [7:0] status = 8'b0011_0000; // CE + DE
 
     always @(posedge clk)
     begin
-        b_select_in <= a_select_in;
+        request_in <= 1'b0;
 
-        if (b_operational_out)
+        if (operational_out)
         begin
             case (state)
                 0:
                 begin
-                    if (b_address_out && b_select_out && b_bus_out == ADDRESS)
+                    selection_y <= selection_x;
+
+                    if (address_out && selection_x && bus_out == ADDRESS)
                     begin
+                        selection_y <= 1'b0; // Intercept the selection
+
                         if (mock_busy && ENABLE_SHORT_BUSY)
                         begin
                             // TODO...
@@ -64,17 +145,13 @@ module mock_cu (
                             state <= 2;
                         end
                     end
-                    else
-                    begin
-                        a_select_out <= b_select_out;
-                    end
                 end
 
                 2:
                 begin
-                    b_operational_in <= 1;
+                    operational_in <= 1;
 
-                    if (!b_address_out)
+                    if (!address_out)
                     begin
                         state <= 3;
                     end
@@ -82,25 +159,25 @@ module mock_cu (
 
                 3:
                 begin
-                    b_operational_in <= 1;
+                    operational_in <= 1;
 
-                    b_bus_in <= ADDRESS;
-                    b_address_in <= 1;
+                    bus_in <= ADDRESS;
+                    address_in <= 1;
 
-                    if (b_command_out)
+                    if (command_out)
                     begin
-                        command <= b_bus_out;
+                        command <= bus_out;
 
-                        b_address_in <= 0;
+                        address_in <= 0;
                         state <= 4;
                     end
                 end
 
                 4:
                 begin
-                    b_operational_in <= 1;
+                    operational_in <= 1;
 
-                    if (!b_command_out)
+                    if (!command_out)
                     begin
                         state <= 5;
                     end
@@ -108,7 +185,7 @@ module mock_cu (
 
                 5:
                 begin
-                    b_operational_in <= 1;
+                    operational_in <= 1;
 
                     if (mock_busy)
                     begin
@@ -150,23 +227,23 @@ module mock_cu (
 
                 6: // Initial status
                 begin
-                    b_operational_in <= 1;
+                    operational_in <= 1;
 
-                    b_bus_in <= status;
-                    b_status_in <= 1;
+                    bus_in <= status;
+                    status_in <= 1;
 
-                    if (b_service_out)
+                    if (service_out)
                     begin
-                        b_status_in <= 0;
+                        status_in <= 0;
                         state <= 7;
                     end
                 end
 
                 7:
                 begin
-                    b_operational_in <= 1;
+                    operational_in <= 1;
 
-                    if (!b_service_out)
+                    if (!service_out)
                     begin
                         if (status[3] || (status[4] && status[5]))
                         begin
@@ -194,26 +271,26 @@ module mock_cu (
 
                 8: // Send a byte...
                 begin
-                    //if (!b_suppress_out)
+                    //if (!suppress_out)
                     //begin
-                        b_bus_in <= count[7:0] + 1;
-                        b_service_in <= 1;
+                        bus_in <= count[7:0] + 1;
+                        service_in <= 1;
 
-                        if (b_command_out)
+                        if (command_out)
                         begin
                             $display("cu: stop");
 
-                            b_service_in <= 0;
+                            service_in <= 0;
                             state <= 13;
                         end
-                        else if (b_service_out)
+                        else if (service_out)
                         begin
                             // Data has been accepted...
-                            $display("cu: sent byte %h to channel", b_bus_in);
+                            $display("cu: sent byte %h to channel", bus_in);
 
                             count <= count + 1;
 
-                            b_service_in <= 0;
+                            service_in <= 0;
                             state <= 9;
                         end
                     //end
@@ -221,7 +298,7 @@ module mock_cu (
 
                 9:
                 begin
-                    if (!b_service_out)
+                    if (!service_out)
                     begin
                         if (count == mock_limit)
                         begin
@@ -237,24 +314,24 @@ module mock_cu (
 
                 11: // Receive a byte...
                 begin
-                    //if (!b_suppress_out)
+                    //if (!suppress_out)
                     //begin
-                        b_service_in <= 1;
+                        service_in <= 1;
 
-                        if (b_command_out)
+                        if (command_out)
                         begin
                             $display("cu: stop");
 
-                            b_service_in <= 0;
+                            service_in <= 0;
                             state <= 13;
                         end
-                        else if (b_service_out)
+                        else if (service_out)
                         begin
-                            $display("cu: received byte %h from channel", b_bus_out);
+                            $display("cu: received byte %h from channel", bus_out);
 
                             count <= count + 1;
 
-                            b_service_in <= 0;
+                            service_in <= 0;
                             state <= 12;
                         end
                     //end
@@ -262,7 +339,7 @@ module mock_cu (
 
                 12:
                 begin
-                    if (!b_service_out)
+                    if (!service_out)
                     begin
                         if (count == mock_limit)
                         begin
@@ -278,7 +355,7 @@ module mock_cu (
 
                 13: // Wait for STOP to be accepted...
                 begin
-                    if (!b_command_out)
+                    if (!command_out)
                     begin
                         status <= 8'b0011_0000; // CE + DE
                         state <= 10;
@@ -287,14 +364,14 @@ module mock_cu (
 
                 10:
                 begin
-                    b_operational_in <= 1;
+                    operational_in <= 1;
 
-                    b_bus_in <= status;
-                    b_status_in <= 1;
+                    bus_in <= status;
+                    status_in <= 1;
 
-                    if (b_service_out)
+                    if (service_out)
                     begin
-                        b_status_in <= 0;
+                        status_in <= 0;
                         state <= 0;
                     end
                 end
