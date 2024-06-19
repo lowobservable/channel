@@ -123,7 +123,9 @@ module axi_mock_cu (
 
     reg [7:0] awaddr;
     reg awaddr_full;
+    // verilator lint_off UNUSEDSIGNAL
     reg [31:0] wdata;
+    // verilator lint_on UNUSEDSIGNAL
     reg wdata_full;
 
     always @(posedge aclk)

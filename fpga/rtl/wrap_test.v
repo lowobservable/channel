@@ -3,7 +3,9 @@
 module wrap_test (
     input wire clk,
 
+    // verilator lint_off UNUSEDSIGNAL
     input wire [31:0] test_driver,
+    // verilator lint_on UNUSEDSIGNAL
     output reg [31:0] test_receiver,
 
     output reg frontend_enable,
