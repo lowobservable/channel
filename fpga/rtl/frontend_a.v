@@ -178,7 +178,7 @@ module frontend_a (
             a_clock_out <= b_clock_out;
 
             // TODO: is this correct?
-            driver_enable <= 1'b1; // a_operational_out;
+            driver_enable <= a_operational_out; // For wrap test set to 1'b1
         end
         else
         begin

@@ -4,6 +4,9 @@ module axi_channel (
     input wire aclk,
     input wire aresetn,
 
+    output reg frontend_enable,
+    output wire channel_active,
+
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
     output wire [7:0] a_bus_out,
@@ -70,14 +73,17 @@ module axi_channel (
     input wire m_axi_bvalid,
     output wire m_axi_bready
 );
-    localparam REG_CONTROL = 8'h00;
-    localparam REG_STATUS_1 = 8'h04;
-    localparam REG_STATUS_2 = 8'h08;
-    localparam REG_CCW_1 = 8'h0c;
-    localparam REG_CCW_2 = 8'h10;
+    localparam REG_CONTROL_1 = 8'h00;
+    localparam REG_CONTROL_2 = 8'h04;
+    localparam REG_STATUS_1 = 8'h08;
+    localparam REG_STATUS_2 = 8'h0c;
+    localparam REG_CCW_1 = 8'h10;
+    localparam REG_CCW_2 = 8'h14;
 
     initial
     begin
+        frontend_enable = 1'b0;
+
         s_axi_arready = 1'b1;
         s_axi_rvalid = 1'b0;
 
@@ -88,7 +94,7 @@ module axi_channel (
 
     reg reset = 1'b0;
 
-    wire channel_active;
+    reg channel_enable = 1'b0;
     reg [7:0] channel_addr;
     reg channel_start = 1'b0;
     reg channel_stop = 1'b0;
@@ -110,6 +116,7 @@ module axi_channel (
 
     channel channel (
         .clk(aclk),
+        .enable(channel_enable),
         .reset(reset),
 
         .a_bus_in(a_bus_in),
@@ -156,11 +163,14 @@ module axi_channel (
             s_axi_rresp <= 2'b00;
 
             case (s_axi_araddr)
-                REG_CONTROL:
-                    s_axi_rdata <= { channel_addr, 22'b0, channel_start || channel_active, reset };
+                REG_CONTROL_1:
+                    s_axi_rdata <= { frontend_enable, 29'b0, channel_enable, reset };
+
+                REG_CONTROL_2:
+                    s_axi_rdata <= { channel_addr, 23'b0, channel_start || channel_active };
 
                 REG_STATUS_1:
-                    s_axi_rdata <= { 30'b0, channel_active, 1'b0 };
+                    s_axi_rdata <= { 31'b0, channel_active };
 
                 REG_STATUS_2:
                     s_axi_rdata <= { device_status, 8'b0, count };
@@ -230,12 +240,18 @@ module axi_channel (
 
             // TODO: should consider s_axi_wstrb
             case (awaddr)
-                REG_CONTROL:
+                REG_CONTROL_1:
                 begin
                     reset <= wdata[0];
 
+                    channel_enable <= wdata[1];
+                    frontend_enable <= wdata[31];
+                end
+
+                REG_CONTROL_2:
+                begin
                     channel_addr <= wdata[31:24];
-                    channel_start <= wdata[1];
+                    channel_start <= wdata[0];
                 end
 
                 REG_CCW_1:
@@ -271,6 +287,8 @@ module axi_channel (
             reset <= 1'b1;
 
             channel_start <= 1'b0;
+            channel_enable <= 1'b0;
+            frontend_enable <= 1'b0;
 
             awaddr_full <= 1'b0;
             wdata_full <= 1'b0;

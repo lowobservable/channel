@@ -35,6 +35,7 @@ module channel_tb;
 
     channel channel (
         .clk(clk),
+        .enable(1'b1),
         .reset(),
 
         .a_bus_in(bus_in),

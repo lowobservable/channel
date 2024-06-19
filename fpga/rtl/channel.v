@@ -2,13 +2,14 @@
 
 module channel (
     input wire clk,
+    input wire enable,
     input wire reset,
 
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
     output reg [7:0] a_bus_out,
 
-    output reg a_operational_out = 1'b1,
+    output reg a_operational_out,
     // verilator lint_off UNUSEDSIGNAL
     input wire a_request_in,
     // veriloator lint on UNUSEDSIGNAL
@@ -351,6 +352,7 @@ module channel (
 
         a_bus_out <= next_bus_out;
         a_address_out <= next_address_out;
+        a_operational_out <= enable; // TODO
         a_hold_out <= next_hold_out;
         a_select_out <= next_select_out;
         a_command_out <= next_command_out;

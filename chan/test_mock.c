@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 #include <unistd.h>
@@ -42,6 +43,9 @@ int main(void)
         perror("e3");
         return -1;
     }
+
+    // Enable channel and disable frontend (will act as terminator).
+    chan_config(&chan, true, false);
 
     printf("READY\n");
 

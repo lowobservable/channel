@@ -12,11 +12,12 @@
 
 #define REGS_SIZE 1024
 
-#define REG_CONTROL 0
-#define REG_STATUS_1 1
-#define REG_STATUS_2 2
-#define REG_CCW_1 3
-#define REG_CCW_2 4
+#define REG_CONTROL_1 0
+#define REG_CONTROL_2 1
+#define REG_STATUS_1 2
+#define REG_STATUS_2 3
+#define REG_CCW_1 4
+#define REG_CCW_2 5
 
 static inline bool is_read_cmd(uint8_t cmd);
 static inline bool is_write_cmd(uint8_t cmd);
@@ -59,6 +60,13 @@ int chan_close(struct chan *chan)
     return result;
 }
 
+int chan_config(struct chan *chan, bool enable, bool frontend_enable)
+{
+    chan->regs[REG_CONTROL_1] = (frontend_enable << 31) | (enable << 1);
+
+    return 0;
+}
+
 ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
 {
     if (count > UINT16_MAX) {
@@ -69,7 +77,8 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
         return -1;
     }
 
-    if (chan->regs[REG_STATUS_1] & 2) {
+    // Channel is active...
+    if (chan->regs[REG_STATUS_1] & 0x01) {
         return -1;
     }
 
@@ -80,9 +89,9 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
     chan->regs[REG_CCW_1] = (cmd << 24) | (uint16_t) count;
     chan->regs[REG_CCW_2] = chan->udmabuf.addr;
 
-    chan->regs[REG_CONTROL] = (addr << 24) | 0x02; // Start...
+    chan->regs[REG_CONTROL_2] = (addr << 24) | 0x01; // Start...
 
-    while (chan->regs[REG_STATUS_1] & 2) {
+    while (chan->regs[REG_STATUS_1] & 0x01) {
         usleep(100);
     }
 
