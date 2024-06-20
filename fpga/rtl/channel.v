@@ -7,12 +7,14 @@ module channel (
 
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
+    input wire a_bus_in_parity,
     output reg [7:0] a_bus_out,
+    output reg a_bus_out_parity,
 
     output reg a_operational_out,
     // verilator lint_off UNUSEDSIGNAL
     input wire a_request_in,
-    // veriloator lint on UNUSEDSIGNAL
+    // verilator lint_on UNUSEDSIGNAL
     output reg a_hold_out,
     output reg a_select_out,
     input wire a_select_in,
@@ -68,6 +70,12 @@ module channel (
     reg [7:0] state = STATE_IDLE;
     reg [7:0] next_state;
     reg [7:0] state_timer;
+
+    // verilator lint_off UNUSEDSIGNAL
+    wire a_bus_in_parity_valid;
+    // verilator lint_on UNUSEDSIGNAL
+
+    assign a_bus_in_parity_valid = (~^a_bus_in == a_bus_in_parity); // Odd parity
 
     reg [7:0] next_bus_out;
     reg next_address_out;
@@ -351,6 +359,7 @@ module channel (
         end
 
         a_bus_out <= next_bus_out;
+        a_bus_out_parity <= ~^next_bus_out; // Odd parity
         a_address_out <= next_address_out;
         a_operational_out <= enable; // TODO
         a_hold_out <= next_hold_out;

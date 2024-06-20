@@ -9,7 +9,9 @@ module axi_channel (
 
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
+    input wire a_bus_in_parity,
     output wire [7:0] a_bus_out,
+    output wire a_bus_out_parity,
 
     output wire a_operational_out,
     input wire a_request_in,
@@ -120,7 +122,9 @@ module axi_channel (
         .reset(reset),
 
         .a_bus_in(a_bus_in),
+        .a_bus_in_parity(a_bus_in_parity),
         .a_bus_out(a_bus_out),
+        .a_bus_out_parity(a_bus_out_parity),
 
         .a_operational_out(a_operational_out),
         .a_request_in(a_request_in),

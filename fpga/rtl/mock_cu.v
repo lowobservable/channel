@@ -6,7 +6,9 @@ module mock_cu (
 
     // Parallel Channel "B"...
     output wire [7:0] b_bus_in,
+    output wire b_bus_in_parity,
     input wire [7:0] b_bus_out,
+    input wire b_bus_out_parity,
 
     input wire b_operational_out,
     output wire b_request_in,
@@ -24,7 +26,9 @@ module mock_cu (
 
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
+    input wire a_bus_in_parity,
     output wire [7:0] a_bus_out,
+    output wire a_bus_out_parity,
 
     output wire a_operational_out,
     input wire a_request_in,
@@ -51,7 +55,9 @@ module mock_cu (
     parameter ENABLE_SHORT_BUSY = 0;
 
     reg [7:0] bus_in;
+    wire bus_in_parity;
     wire [7:0] bus_out;
+    wire bus_out_parity;
     wire operational_out;
     reg request_in;
     wire address_out;
@@ -64,11 +70,21 @@ module mock_cu (
     wire selection_x;
     reg selection_y;
 
+    assign bus_in_parity = ~^bus_in; // Odd parity
+
+    // verilator lint_off UNUSEDSIGNAL
+    wire bus_out_parity_valid;
+    // verilator lint_on UNUSEDSIGNAL
+
+    assign bus_out_parity_valid = (~^bus_out == bus_out_parity); // Odd parity
+
     tee tee (
         .clk(clk),
 
         .b_bus_in(b_bus_in),
+        .b_bus_in_parity(b_bus_in_parity),
         .b_bus_out(b_bus_out),
+        .b_bus_out_parity(b_bus_out_parity),
         .b_operational_out(b_operational_out),
         .b_request_in(b_request_in),
         .b_hold_out(b_hold_out),
@@ -84,7 +100,9 @@ module mock_cu (
         .b_suppress_out(b_suppress_out),
 
         .a_bus_in(a_bus_in),
+        .a_bus_in_parity(a_bus_in_parity),
         .a_bus_out(a_bus_out),
+        .a_bus_out_parity(a_bus_out_parity),
         .a_operational_out(a_operational_out),
         .a_request_in(a_request_in),
         .a_hold_out(a_hold_out),
@@ -100,7 +118,9 @@ module mock_cu (
         .a_suppress_out(a_suppress_out),
 
         .bus_in(bus_in),
+        .bus_in_parity(bus_in_parity),
         .bus_out(bus_out),
+        .bus_out_parity(bus_out_parity),
         .operational_out(operational_out),
         .request_in(request_in),
         .hold_out(), // TODO

@@ -5,7 +5,9 @@ module tee (
 
     // Parallel Channel "B"...
     output reg [7:0] b_bus_in,
+    output reg b_bus_in_parity,
     input wire [7:0] b_bus_out,
+    input wire b_bus_out_parity,
 
     input wire b_operational_out,
     output reg b_request_in,
@@ -23,7 +25,9 @@ module tee (
 
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
+    input wire a_bus_in_parity,
     output reg [7:0] a_bus_out,
+    output reg a_bus_out_parity,
 
     output reg a_operational_out,
     input wire a_request_in,
@@ -41,7 +45,9 @@ module tee (
 
     // Device...
     input wire [7:0] bus_in,
+    input wire bus_in_parity,
     output reg [7:0] bus_out,
+    output reg bus_out_parity,
 
     output reg operational_out,
     input wire request_in,
@@ -64,6 +70,7 @@ module tee (
     always @(posedge clk)
     begin
         b_bus_in <= a_bus_in | bus_in;
+        b_bus_in_parity <= a_bus_in_parity | bus_in_parity;
         b_request_in <= a_request_in | request_in;
         b_select_in <= !PRIORITY && !BYPASS ? selection_y : a_select_in;
         b_operational_in <= a_operational_in | operational_in;
@@ -72,6 +79,7 @@ module tee (
         b_service_in <= a_service_in | service_in;
 
         a_bus_out <= b_bus_out;
+        a_bus_out_parity <= b_bus_out_parity;
         a_operational_out <= b_operational_out;
         a_hold_out <= b_hold_out;
         a_select_out <= PRIORITY && !BYPASS ? selection_y : b_select_out;
@@ -81,6 +89,7 @@ module tee (
         a_suppress_out <= b_suppress_out;
 
         bus_out <= b_bus_out;
+        bus_out_parity <= b_bus_out_parity;
         operational_out <= b_operational_out;
         hold_out <= b_hold_out;
         address_out <= b_address_out;

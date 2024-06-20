@@ -6,7 +6,9 @@ module channel_tb;
     reg clk = 0;
 
     wire [7:0] bus_in;
+    wire bus_in_parity;
     wire [7:0] bus_out;
+    wire bus_out_parity;
     wire operational_out;
     wire request_in;
     wire hold_out;
@@ -39,7 +41,9 @@ module channel_tb;
         .reset(),
 
         .a_bus_in(bus_in),
+        .a_bus_in_parity(bus_in_parity),
         .a_bus_out(bus_out),
+        .a_bus_out_parity(bus_out_parity),
         .a_operational_out(operational_out),
         .a_request_in(request_in),
         .a_hold_out(hold_out),
@@ -78,7 +82,9 @@ module channel_tb;
         .clk(clk),
 
         .b_bus_in(bus_in),
+        .b_bus_in_parity(bus_in_parity),
         .b_bus_out(bus_out),
+        .b_bus_out_parity(bus_out_parity),
         .b_operational_out(operational_out),
         .b_request_in(request_in),
         .b_hold_out(hold_out),
@@ -94,7 +100,9 @@ module channel_tb;
         .b_suppress_out(suppress_out),
 
         .a_bus_in(8'b0),
+        .a_bus_in_parity(1'b0),
         .a_bus_out(),
+        .a_bus_out_parity(),
         .a_operational_out(),
         .a_request_in(1'b0),
         .a_hold_out(),

@@ -6,7 +6,9 @@ module axi_mock_cu (
 
     // Parallel Channel "B"...
     output wire [7:0] b_bus_in,
+    output wire b_bus_in_parity,
     input wire [7:0] b_bus_out,
+    input wire b_bus_out_parity,
 
     input wire b_operational_out,
     output wire b_request_in,
@@ -24,7 +26,9 @@ module axi_mock_cu (
 
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
+    input wire a_bus_in_parity,
     output wire [7:0] a_bus_out,
+    output wire a_bus_out_parity,
 
     output wire a_operational_out,
     input wire a_request_in,
@@ -196,7 +200,9 @@ module axi_mock_cu (
         .reset(~aresetn),
 
         .b_bus_in(b_bus_in),
+        .b_bus_in_parity(b_bus_in_parity),
         .b_bus_out(b_bus_out),
+        .b_bus_out_parity(b_bus_out_parity),
         .b_operational_out(b_operational_out),
         .b_request_in(b_request_in),
         .b_hold_out(b_hold_out),
@@ -212,7 +218,9 @@ module axi_mock_cu (
         .b_suppress_out(b_suppress_out),
 
         .a_bus_in(a_bus_in),
+        .a_bus_in_parity(a_bus_in_parity),
         .a_bus_out(a_bus_out),
+        .a_bus_out_parity(a_bus_out_parity),
         .a_operational_out(a_operational_out),
         .a_request_in(a_request_in),
         .a_hold_out(a_hold_out),
