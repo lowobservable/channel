@@ -85,25 +85,36 @@ module wrap_test (
         // - Service Out
         // - Operational Out
 
-        a_bus_out <= { test_driver[11], test_driver[12], test_driver[13], test_driver[14], test_driver[15], test_driver[16], test_driver[17], test_driver[18] };
         a_bus_out_parity <= test_driver[19];
+        a_bus_out <= test_driver[18:11];
         a_mark_0_out <= test_driver[10];
 
-        a_operational_out <= test_driver[0];
-        a_hold_out <= test_driver[2]; // -> Select In
-        a_select_out <= test_driver[7]; // -> Address In
-        a_address_out <= test_driver[6]; // -> Metering In
-        a_command_out <= test_driver[4]; // -> Request In
-        a_service_out <= test_driver[1]; // -> Data In
-        a_suppress_out <= test_driver[3]; // -> Disconnect In
-        a_data_out <= test_driver[5]; // -> Service In
-        a_metering_out <= test_driver[8]; // -> Status In
         a_clock_out <= test_driver[9]; // -> Operational In
+        a_metering_out <= test_driver[8]; // -> Status In
+        a_data_out <= test_driver[5]; // -> Service In
+        a_suppress_out <= test_driver[3]; // -> Disconnect In
+        a_service_out <= test_driver[1]; // -> Data In
+        a_command_out <= test_driver[4]; // -> Request In
+        a_address_out <= test_driver[6]; // -> Metering In
+        a_select_out <= test_driver[7]; // -> Address In
+        a_hold_out <= test_driver[2]; // -> Select In
+        a_operational_out <= test_driver[0];
 
         test_receiver <= {
             12'b0,
-            a_bus_in_parity, a_bus_in[0], a_bus_in[1], a_bus_in[2], a_bus_in[3], a_bus_in[4], a_bus_in[5], a_bus_in[6], a_bus_in[7], a_mark_0_in,
-            a_operational_in, a_status_in, a_address_in, a_metering_in, a_service_in, a_request_in, a_disconnect_in, a_select_in, a_data_in, 1'b0
+            a_bus_in_parity,
+            a_bus_in,
+            a_mark_0_in,
+            a_operational_in,
+            a_status_in,
+            a_address_in,
+            a_metering_in,
+            a_service_in,
+            a_request_in,
+            a_disconnect_in,
+            a_select_in,
+            a_data_in,
+            1'b0
         };
     end
 endmodule
