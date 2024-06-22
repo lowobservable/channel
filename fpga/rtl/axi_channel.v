@@ -100,6 +100,7 @@ module axi_channel (
     reg [7:0] channel_addr;
     reg channel_start = 1'b0;
     reg channel_stop = 1'b0;
+    wire [1:0] channel_condition_code;
     wire [7:0] channel_status_tdata;
     wire channel_status_tvalid;
     wire [7:0] channel_data_send_tdata;
@@ -146,6 +147,7 @@ module axi_channel (
         .command(ccw_command),
         .start(channel_start),
         .stop(channel_stop),
+        .condition_code(channel_condition_code),
 
         .status_tdata(channel_status_tdata),
         .status_tvalid(channel_status_tvalid),
@@ -174,7 +176,7 @@ module axi_channel (
                     s_axi_rdata <= { channel_addr, 23'b0, channel_start || channel_active };
 
                 REG_STATUS_1:
-                    s_axi_rdata <= { 31'b0, channel_active };
+                    s_axi_rdata <= { 24'b0, channel_condition_code, 5'b0, channel_active };
 
                 REG_STATUS_2:
                     s_axi_rdata <= { device_status, 8'b0, count };

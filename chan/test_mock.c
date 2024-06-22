@@ -13,6 +13,7 @@
 #include "chan.h"
 #include "mock_cu.h"
 
+int test_no_cu(struct chan *chan);
 int test_read_command(char *case_name, struct chan *chan, uint16_t count,
         struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
 int test_write_command(char *case_name, struct chan *chan, uint16_t count,
@@ -49,6 +50,7 @@ int main(void)
 
     printf("READY\n");
 
+    test_no_cu(&chan);
     test_read_command("read_command_cu_more", &chan, 6, &mock_cu, 16, 6);
     test_read_command("read_command_cu_less", &chan, 16, &mock_cu, 6, 6);
     test_write_command("write_command_cu_more", &chan, 6, &mock_cu, 16, 6);
@@ -60,6 +62,24 @@ int main(void)
     chan_close(&chan);
 
     close(mem_fd);
+}
+
+int test_no_cu(struct chan *chan)
+{
+    printf("TEST: test_no_cu\n");
+
+    uint8_t buf[1024];
+
+    int result = chan_exec(chan, 0x10, 0x03 /* NOP */, buf, 0);
+
+    if (result != -3) {
+        printf("FAIL: Expected not operational condition code\n");
+        return -1;
+    }
+
+    printf("PASS\n");
+
+    return 0;
 }
 
 int test_read_command(char *case_name, struct chan *chan, uint16_t count,

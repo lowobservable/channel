@@ -36,6 +36,8 @@ module channel (
     input wire start,
     input wire stop,
 
+    output reg [1:0] condition_code,
+
     // AXI-Stream for status...
     output reg [7:0] status_tdata,
     output reg status_tvalid,
@@ -90,6 +92,8 @@ module channel (
     reg [7:0] next_data_recv_tdata;
     reg next_data_recv_tvalid;
 
+    reg [1:0] next_condition_code;
+
     always @(*)
     begin
         next_state = state;
@@ -107,11 +111,15 @@ module channel (
         next_data_recv_tdata = data_recv_tdata;
         next_data_recv_tvalid = data_recv_tvalid;
 
+        next_condition_code = condition_code;
+
         case (state)
             STATE_IDLE:
             begin
                 if (start)
                 begin
+                    next_condition_code = 0;
+
                     // TODO: 'Address out' can rise for device selection only
                     // when 'select out' (or 'hold out'), 'select in', 'status
                     // in', and 'operational in' are down at the channel.
@@ -155,6 +163,8 @@ module channel (
                 end
                 else if (a_select_in)
                 begin
+                    next_condition_code = 3; // Not operational
+
                     next_state = STATE_IDLE;
                 end
 
@@ -373,6 +383,8 @@ module channel (
         data_recv_tdata <= next_data_recv_tdata;
         data_recv_tvalid <= next_data_recv_tvalid;
 
+        condition_code <= next_condition_code;
+
         if (reset)
         begin
             state <= STATE_IDLE;
@@ -382,6 +394,8 @@ module channel (
             status_tvalid <= 0;
             data_send_tready <= 0;
             data_recv_tvalid <= 0;
+
+            condition_code <= 0;
         end
     end
 

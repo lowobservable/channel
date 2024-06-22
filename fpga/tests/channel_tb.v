@@ -27,6 +27,7 @@ module channel_tb;
     reg [7:0] channel_command;
     reg channel_start = 0;
     reg channel_stop = 0;
+    wire [1:0] channel_condition_code;
 
     reg [7:0] channel_count;
 
@@ -62,6 +63,7 @@ module channel_tb;
         .command(channel_command),
         .start(channel_start),
         .stop(channel_stop),
+        .condition_code(channel_condition_code),
 
         .data_send_tdata(8'h99),
         .data_send_tvalid(channel_data_send_tvalid),
@@ -161,6 +163,8 @@ module channel_tb;
         #40;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+
+        `assert_equal(channel_condition_code, 3, "condition code should be not operational");
 
         $display("END: test_no_cu");
     end

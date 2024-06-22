@@ -79,7 +79,7 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
 
     // Channel is active...
     if (chan->regs[REG_STATUS_1] & 0x01) {
-        return -1;
+        return -2;
     }
 
     if (is_write_cmd(cmd)) {
@@ -93,6 +93,12 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
 
     while (chan->regs[REG_STATUS_1] & 0x01) {
         usleep(100);
+    }
+
+    uint8_t condition_code = (uint8_t) ((chan->regs[REG_STATUS_1] & 0xc0) >> 6);
+
+    if (condition_code != 0) {
+        return -3;
     }
 
     uint32_t status_2 = chan->regs[REG_STATUS_2];
