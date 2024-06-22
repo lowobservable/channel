@@ -177,8 +177,8 @@ module frontend_a (
             a_metering_out <= b_metering_out;
             a_clock_out <= b_clock_out;
 
-            // TODO: is this correct?
-            driver_enable <= a_operational_out; // For wrap test set to 1'b1
+            // Enabling drivers causes a negligible current draw increase.
+            driver_enable <= 1'b1;
         end
         else
         begin
