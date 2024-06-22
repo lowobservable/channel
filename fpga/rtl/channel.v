@@ -12,9 +12,7 @@ module channel (
     output reg a_bus_out_parity,
 
     output reg a_operational_out,
-    // verilator lint_off UNUSEDSIGNAL
     input wire a_request_in,
-    // verilator lint_on UNUSEDSIGNAL
     output reg a_hold_out,
     output reg a_select_out,
     input wire a_select_in,
@@ -32,6 +30,7 @@ module channel (
     input wire [7:0] command,
 
     output wire active, // "subchannel active"
+    output wire request,
 
     input wire start,
     input wire stop,
@@ -400,4 +399,5 @@ module channel (
     end
 
     assign active = (state != STATE_IDLE);
+    assign request = a_request_in;
 endmodule

@@ -97,6 +97,7 @@ module axi_channel (
     reg reset = 1'b0;
 
     reg channel_enable = 1'b0;
+    wire channel_request;
     reg [7:0] channel_addr;
     reg channel_start = 1'b0;
     reg channel_stop = 1'b0;
@@ -142,6 +143,7 @@ module axi_channel (
         .a_suppress_out(a_suppress_out),
 
         .active(channel_active),
+        .request(channel_request),
 
         .addr(channel_addr),
         .command(ccw_command),
@@ -176,7 +178,7 @@ module axi_channel (
                     s_axi_rdata <= { channel_addr, 23'b0, channel_start || channel_active };
 
                 REG_STATUS_1:
-                    s_axi_rdata <= { 24'b0, channel_condition_code, 5'b0, channel_active };
+                    s_axi_rdata <= { 24'b0, channel_condition_code, 4'b0, channel_request, channel_active };
 
                 REG_STATUS_2:
                     s_axi_rdata <= { device_status, 8'b0, count };
