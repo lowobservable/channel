@@ -132,7 +132,7 @@ module frontend_a (
             b_bus_in_parity <= 1'b0;
             b_mark_0_in <= 1'b0;
             b_request_in <= 1'b0;
-            b_select_in <= a_select_out;
+            b_select_in <= b_select_out;
             b_operational_in <= 1'b0;
             b_address_in <= 1'b0;
             b_status_in <= 1'b0;
