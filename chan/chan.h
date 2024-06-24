@@ -20,6 +20,6 @@ int chan_close(struct chan *chan);
 
 int chan_config(struct chan *chan, bool enable, bool frontend_enable);
 
-int chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count);
+ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count);
 
 #endif
