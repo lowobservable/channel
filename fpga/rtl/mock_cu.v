@@ -150,6 +150,8 @@ module mock_cu (
             case (state)
                 0:
                 begin
+                    operational_in <= 0;
+
                     selection_y <= selection_x;
 
                     if (address_out && selection_x && bus_out == ADDRESS)
