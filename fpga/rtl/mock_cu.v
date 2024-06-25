@@ -173,6 +173,8 @@ module mock_cu (
                 begin
                     operational_in <= 1;
 
+                    count <= 0; // Reset the mock count
+
                     if (!address_out)
                     begin
                         state <= 3;
@@ -273,14 +275,10 @@ module mock_cu (
                         end
                         else if (command == 8'h01 /* WRITE */)
                         begin
-                            count <= 0;
-
                             state <= 11;
                         end
                         else if (command == 8'h02 /* READ */)
                         begin
-                            count <= 0;
-
                             state <= 8;
                         end
                         else

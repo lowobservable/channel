@@ -69,6 +69,10 @@ int chan_config(struct chan *chan, bool enable, bool frontend_enable)
 
 ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
 {
+    if (count > 0 && buf == NULL) {
+        return -1;
+    }
+
     if (count > UINT16_MAX) {
         return -1;
     }
@@ -82,7 +86,7 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
         return -2;
     }
 
-    if (is_write_cmd(cmd)) {
+    if (is_write_cmd(cmd) && count > 0) {
         udmabuf_copy_to_dma(&chan->udmabuf, buf, count);
     }
 
@@ -113,7 +117,7 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
     // The count in the status register is a "residual" count.
     size_t actual_count = count - (uint16_t) status_2;
 
-    if (is_read_cmd(cmd)) {
+    if (is_read_cmd(cmd) && actual_count > 0) {
         udmabuf_copy_from_dma(&chan->udmabuf, buf, actual_count);
     }
 

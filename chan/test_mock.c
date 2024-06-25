@@ -18,6 +18,7 @@ int test_read_command(char *case_name, struct chan *chan, uint16_t count,
         struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
 int test_write_command(char *case_name, struct chan *chan, uint16_t count,
         struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
+int test_nop_command(struct chan *chan, struct mock_cu *mock_cu);
 
 void buf_arrange(uint8_t *buf, size_t count);
 int buf_assert(uint8_t *buf, size_t count);
@@ -56,6 +57,7 @@ int main(void)
     test_write_command("write_command_cu_more", &chan, 6, &mock_cu, 16, 6);
     test_write_command("write_command_cu_less", &chan, 16, &mock_cu, 6, 6);
     test_read_command("big_read", &chan, 512, &mock_cu, 512, 512);
+    test_nop_command(&chan, &mock_cu);
 
     mock_cu_close(&mock_cu);
 
@@ -68,9 +70,7 @@ int test_no_cu(struct chan *chan)
 {
     printf("TEST: test_no_cu\n");
 
-    uint8_t buf[1024];
-
-    int result = chan_exec(chan, 0x10, 0x03 /* NOP */, buf, 0);
+    int result = chan_exec(chan, 0x10, 0x03 /* NOP */, NULL, 0);
 
     if (result != -3) {
         printf("FAIL: Expected not operational condition code\n");
@@ -151,6 +151,36 @@ int test_write_command(char *case_name, struct chan *chan, uint16_t count,
     }
 
     if (mock_cu_assert(mock_cu, cmd, expected_count) != 0) {
+        printf("FAIL: mock CU assertions failed\n");
+        return -1;
+    }
+
+    printf("PASS\n");
+
+    return 0;
+}
+
+int test_nop_command(struct chan *chan, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_nop_command\n");
+
+    mock_cu_arrange(mock_cu, 0, 0);
+
+    uint8_t cmd = 0x03; // NOP
+
+    int result = chan_exec(chan, 0xff, cmd, NULL, 0);
+
+    if (result < 0) {
+        printf("FAIL: unable to start channel\n");
+        return -1;
+    }
+
+    if (result != 0) {
+        printf("FAIL: expected to receive 0 bytes, received %d\n", result);
+        return -1;
+    }
+
+    if (mock_cu_assert(mock_cu, cmd, 0) != 0) {
         printf("FAIL: mock CU assertions failed\n");
         return -1;
     }
