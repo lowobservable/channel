@@ -31,6 +31,7 @@ module channel_tb;
 
     reg [7:0] channel_count;
 
+    reg [7:0] channel_data_send_tdata;
     reg channel_data_send_tvalid = 0;
     wire channel_data_send_tready;
     wire channel_data_recv_tvalid;
@@ -65,7 +66,7 @@ module channel_tb;
         .stop(channel_stop),
         .condition_code(channel_condition_code),
 
-        .data_send_tdata(8'h99),
+        .data_send_tdata(channel_data_send_tdata),
         .data_send_tvalid(channel_data_send_tvalid),
         .data_send_tready(channel_data_send_tready),
         .data_recv_tvalid(channel_data_recv_tvalid),
@@ -160,7 +161,7 @@ module channel_tb;
 
         start_channel(8'h10, 8'h02 /* READ */, 6);
 
-        #40;
+        #200;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -182,7 +183,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h02 /* READ */, 6);
 
-        #100;
+        #200;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -203,7 +204,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h02 /* READ */, 6);
 
-        #300;
+        #600;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -226,7 +227,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h02 /* READ */, 16);
 
-        #300;
+        #500;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -249,7 +250,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h01 /* WRITE */, 6);
 
-        #300;
+        #500;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -272,7 +273,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h01 /* WRITE */, 16);
 
-        #300;
+        #500;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -294,7 +295,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'h03 /* NOP */, 0);
 
-        #100;
+        #200;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -314,7 +315,7 @@ module channel_tb;
 
         start_channel(8'h1a, 8'hff, 6);
 
-        #100;
+        #200;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
@@ -331,6 +332,8 @@ module channel_tb;
         channel_addr = addr;
         channel_command = command;
         channel_count = count;
+
+        channel_data_send_tdata = 1;
 
         channel_start = 1;
 
@@ -362,6 +365,11 @@ module channel_tb;
         if ((channel_data_send_tvalid && channel_data_send_tready) || (channel_data_recv_tvalid && channel_data_recv_tready))
         begin
             channel_count <= channel_count - 1;
+        end
+
+        if ((channel_data_send_tvalid && channel_data_send_tready))
+        begin
+            channel_data_send_tdata <= channel_data_send_tdata + 1;
         end
     end
 endmodule

@@ -51,22 +51,27 @@ module channel (
     output reg data_recv_tvalid,
     input wire data_recv_tready
 );
+    parameter CLOCKS_PER_100_NS = 5; // 50 MHz clock period is 20 ns
+
     localparam STATE_IDLE = 0;
-    localparam STATE_SELECTION_ADDRESS_OUT = 1;
-    localparam STATE_SELECTION_SELECT_OUT = 2;
-    localparam STATE_SELECTION_ADDRESS_IN = 3;
-    localparam STATE_SELECTION_COMMAND_OUT = 4;
-    localparam STATE_SELECTION_STATUS_IN = 5;
-    localparam STATE_SELECTION_SERVICE_OUT = 6;
-    localparam STATE_SELECTED = 7;
+    localparam STATE_SELECTION_ADDRESS_OUT_1 = 1;
+    localparam STATE_SELECTION_ADDRESS_OUT_2 = 2;
+    localparam STATE_SELECTION_SELECT_OUT = 3;
+    localparam STATE_SELECTION_ADDRESS_IN = 4;
+    localparam STATE_SELECTION_COMMAND_OUT_1 = 5;
+    localparam STATE_SELECTION_COMMAND_OUT_2 = 6;
+    localparam STATE_SELECTION_STATUS_IN = 7;
+    localparam STATE_SELECTION_SERVICE_OUT = 8;
+    localparam STATE_SELECTED = 9;
 
-    localparam STATE_DATA_SEND_1 = 8;
-    localparam STATE_DATA_SEND_2 = 9;
-    localparam STATE_DATA_RECV_1 = 10;
-    localparam STATE_DATA_RECV_2 = 11;
-    localparam STATE_STOP = 12;
+    localparam STATE_DATA_SEND_1 = 10;
+    localparam STATE_DATA_SEND_2 = 11;
+    localparam STATE_DATA_SEND_3 = 12;
+    localparam STATE_DATA_RECV_1 = 13;
+    localparam STATE_DATA_RECV_2 = 14;
+    localparam STATE_STOP = 15;
 
-    localparam STATE_ENDING = 13;
+    localparam STATE_ENDING = 16;
 
     reg [7:0] state = STATE_IDLE;
     reg [7:0] next_state;
@@ -97,7 +102,7 @@ module channel (
     begin
         next_state = state;
 
-        next_bus_out = 8'b0;
+        next_bus_out = a_bus_out;
         next_hold_out = 0;
         next_select_out = 0;
         next_address_out = 0;
@@ -122,24 +127,33 @@ module channel (
                     // TODO: 'Address out' can rise for device selection only
                     // when 'select out' (or 'hold out'), 'select in', 'status
                     // in', and 'operational in' are down at the channel.
-                    next_state = STATE_SELECTION_ADDRESS_OUT;
+                    next_state = STATE_SELECTION_ADDRESS_OUT_1;
                 end
             end
 
-            STATE_SELECTION_ADDRESS_OUT:
+            STATE_SELECTION_ADDRESS_OUT_1:
             begin
-                // TODO: 'Address out' rises at least 250 nanoseconds after
+                next_bus_out = addr;
+
+                // SPEC: 'Address out' rises at least 250 nanoseconds after
                 // the I/O-device address is placed on 'bus out' or at least
                 // 250 nanoseconds after the rise of 'operational out',
                 // whichever occurs later.
-                next_bus_out = addr;
+                if (state_timer == 3 * CLOCKS_PER_100_NS)
+                begin
+                    next_state = STATE_SELECTION_ADDRESS_OUT_2;
+                end
+            end
+
+            STATE_SELECTION_ADDRESS_OUT_2:
+            begin
                 next_address_out = 1;
 
                 // SPEC: When an operation is being initiated by the channel,
                 // 'select out' is raised not less than 400 nanoseconds after
                 // the rise of 'address out', which indicates the address of
                 // the device being selected.
-                if (state_timer == 4)
+                if (state_timer == 4 * CLOCKS_PER_100_NS)
                 begin
                     next_state = STATE_SELECTION_SELECT_OUT;
                 end
@@ -147,7 +161,6 @@ module channel (
 
             STATE_SELECTION_SELECT_OUT:
             begin
-                next_bus_out = addr;
                 next_address_out = 1;
                 next_hold_out = 1; // TODO: Can this be done at the same time?
                 next_select_out = 1;
@@ -167,7 +180,7 @@ module channel (
                     next_state = STATE_IDLE;
                 end
 
-                // TODO: timeout?
+                // TODO: timeout
             end
 
             STATE_SELECTION_ADDRESS_IN:
@@ -178,20 +191,32 @@ module channel (
                 // TODO: what happens if bus_in != addres???
                 if (a_address_in && a_bus_in == addr)
                 begin
-                    next_state = STATE_SELECTION_COMMAND_OUT;
+                    next_state = STATE_SELECTION_COMMAND_OUT_1;
                 end
 
                 // TODO: timeout?
             end
 
-            STATE_SELECTION_COMMAND_OUT:
+            STATE_SELECTION_COMMAND_OUT_1:
             begin
-                // SPEC; 'Hold out' with 'select out' may drop any time after
+                // SPEC: 'Hold out' with 'select out' may drop any time after
                 // 'address in' rises.
 
                 // TODO: they go up with channel controlled burst, right?
 
                 next_bus_out = command;
+
+                // SPEC: The channel delays raising of the signal on the outbound
+                // tag lines so that the information on 'bus out' precedes the
+                // signal on the outbound tag line by at least 100 nanoseconds.
+                if (state_timer == CLOCKS_PER_100_NS)
+                begin
+                    next_state = STATE_SELECTION_COMMAND_OUT_2;
+                end
+            end
+
+            STATE_SELECTION_COMMAND_OUT_2:
+            begin
                 next_command_out = 1;
 
                 if (!a_address_in)
@@ -279,15 +304,25 @@ module channel (
                     next_data_send_tready = 1'b0;
 
                     next_bus_out = data_send_tdata;
-                    next_service_out = 1;
 
-                    $display("chan: sent byte %h to device", data_send_tdata);
+                    $display("chan: sending byte %h to device", data_send_tdata);
 
                     next_state = STATE_DATA_SEND_2;
                 end
             end
 
             STATE_DATA_SEND_2:
+            begin
+                // SPEC: The channel delays raising of the signal on the outbound
+                // tag lines so that the information on 'bus out' precedes the
+                // signal on the outbound tag line by at least 100 nanoseconds.
+                if (state_timer == CLOCKS_PER_100_NS)
+                begin
+                    next_state = STATE_DATA_SEND_3;
+                end
+            end
+
+            STATE_DATA_SEND_3:
             begin
                 next_service_out = 1;
 

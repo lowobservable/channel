@@ -151,6 +151,9 @@ module mock_cu (
                 0:
                 begin
                     operational_in <= 0;
+                    address_in <= 0;
+                    status_in <= 0;
+                    service_in <= 0;
 
                     selection_y <= selection_x;
 
@@ -296,6 +299,12 @@ module mock_cu (
                         bus_in <= count[7:0] + 1;
                         service_in <= 1;
 
+                        // Kinda hacky way to show this once per byte...
+                        if (service_in == 0)
+                        begin
+                            $display("cu: sending byte %h to channel", count[7:0] + 8'b1);
+                        end
+
                         if (command_out)
                         begin
                             $display("cu: stop");
@@ -305,9 +314,6 @@ module mock_cu (
                         end
                         else if (service_out)
                         begin
-                            // Data has been accepted...
-                            $display("cu: sent byte %h to channel", bus_in);
-
                             count <= count + 1;
 
                             service_in <= 0;
