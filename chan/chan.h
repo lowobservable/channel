@@ -14,11 +14,9 @@ struct chan {
     struct udmabuf udmabuf;
 };
 
-int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path);
+int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path, bool frontend_enable);
 
 int chan_close(struct chan *chan);
-
-int chan_config(struct chan *chan, bool enable, bool frontend_enable);
 
 ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count);
 

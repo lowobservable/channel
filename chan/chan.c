@@ -19,10 +19,11 @@
 #define REG_CCW_1 4
 #define REG_CCW_2 5
 
+void config(struct chan *chan, bool enable, bool frontend_enable);
 static inline bool is_read_cmd(uint8_t cmd);
 static inline bool is_write_cmd(uint8_t cmd);
 
-int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path)
+int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path, bool frontend_enable)
 {
     chan->addr = addr;
 
@@ -38,6 +39,8 @@ int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path)
         return -1;
     }
 
+    config(chan, true, frontend_enable);
+
     return 0;
 }
 
@@ -46,6 +49,8 @@ int chan_close(struct chan *chan)
     if (chan == NULL) {
         return 0;
     }
+
+    config(chan, false, false);
 
     int result = 0;
 
@@ -58,13 +63,6 @@ int chan_close(struct chan *chan)
     }
 
     return result;
-}
-
-int chan_config(struct chan *chan, bool enable, bool frontend_enable)
-{
-    chan->regs[REG_CONTROL_1] = (frontend_enable << 31) | (enable << 1);
-
-    return 0;
 }
 
 ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
@@ -122,6 +120,11 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
     }
 
     return actual_count;
+}
+
+void config(struct chan *chan, bool enable, bool frontend_enable)
+{
+    chan->regs[REG_CONTROL_1] = (frontend_enable << 31) | (enable << 1);
 }
 
 static inline bool is_read_cmd(uint8_t cmd)

@@ -10,6 +10,8 @@
 
 #include "chan.h"
 
+int test_no_cu(struct chan *chan);
+
 int main(void)
 {
     int mem_fd;
@@ -21,24 +23,32 @@ int main(void)
 
     struct chan chan;
 
-    if (chan_open(&chan, 0x40000000, mem_fd, "udmabuf0") < 0) {
+    if (chan_open(&chan, 0x40000000, mem_fd, "udmabuf0", true) < 0) {
         perror("e2");
         return -1;
     }
 
-    // Enable channel and frontend.
-    chan_config(&chan, true, true);
-
     printf("READY\n");
 
-    printf("Press ENTER...");
-
-    getchar();
-
-    // Disable frontend.
-    chan_config(&chan, true, false);
+    test_no_cu(&chan);
 
     chan_close(&chan);
 
     close(mem_fd);
+}
+
+int test_no_cu(struct chan *chan)
+{
+    printf("TEST: test_no_cu\n");
+
+    int result = chan_exec(chan, 0x10, 0x03 /* NOP */, NULL, 0);
+
+    if (result != -3) {
+        printf("FAIL: Expected not operational condition code\n");
+        return -1;
+    }
+
+    printf("PASS\n");
+
+    return 0;
 }

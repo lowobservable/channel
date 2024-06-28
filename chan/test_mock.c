@@ -34,7 +34,7 @@ int main(void)
 
     struct chan chan;
 
-    if (chan_open(&chan, 0x40000000, mem_fd, "udmabuf0") < 0) {
+    if (chan_open(&chan, 0x40000000, mem_fd, "udmabuf0", false) < 0) {
         perror("e2");
         return -1;
     }
@@ -45,9 +45,6 @@ int main(void)
         perror("e3");
         return -1;
     }
-
-    // Enable channel and disable frontend (will act as terminator).
-    chan_config(&chan, true, false);
 
     printf("READY\n");
 
