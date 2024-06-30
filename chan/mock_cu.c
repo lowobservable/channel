@@ -38,9 +38,9 @@ int mock_cu_close(struct mock_cu *mock_cu)
     return 0;
 }
 
-int mock_cu_arrange(struct mock_cu *mock_cu, uint8_t status, uint16_t limit)
+int mock_cu_arrange(struct mock_cu *mock_cu, bool busy, bool short_busy, uint16_t limit)
 {
-    mock_cu->regs[REG_CONTROL] = (limit << 16) | (status << 1); // TODO
+    mock_cu->regs[REG_CONTROL] = (limit << 16) | (short_busy << 2) | (busy << 1);
 
     return 0;
 }

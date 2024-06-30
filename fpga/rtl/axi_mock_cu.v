@@ -83,6 +83,7 @@ module axi_mock_cu (
     end
 
     reg mock_busy;
+    reg mock_short_busy;
     reg [15:0] mock_limit;
     wire [7:0] command;
     wire [15:0] count;
@@ -96,7 +97,7 @@ module axi_mock_cu (
 
             case (s_axi_araddr)
                 REG_CONTROL:
-                    s_axi_rdata <= { mock_limit, 14'b0, mock_busy, 1'b0 };
+                    s_axi_rdata <= { mock_limit, 13'b0, mock_short_busy, mock_busy, 1'b0 };
 
                 REG_STATUS:
                     s_axi_rdata <= { count, command, 8'b0 };
@@ -161,11 +162,14 @@ module axi_mock_cu (
                 REG_CONTROL:
                 begin
                     mock_busy <= wdata[1];
+                    mock_short_busy <= wdata[2];
                     mock_limit <= wdata[31:16];
                 end
 
                 default:
+                begin
                     s_axi_bresp <= 2'b10; // SLVERR
+                end
             endcase
 
             s_axi_bvalid <= 1'b1;
@@ -236,6 +240,7 @@ module axi_mock_cu (
         .a_suppress_out(a_suppress_out),
 
         .mock_busy(mock_busy),
+        .mock_short_busy(mock_short_busy),
         .mock_limit(mock_limit),
 
         .command(command),

@@ -62,16 +62,18 @@ module channel (
     localparam STATE_SELECTION_COMMAND_OUT_2 = 6;
     localparam STATE_SELECTION_STATUS_IN = 7;
     localparam STATE_SELECTION_SERVICE_OUT = 8;
-    localparam STATE_SELECTED = 9;
+    localparam STATE_SELECTION_SHORT_BUSY = 9;
 
-    localparam STATE_DATA_SEND_1 = 10;
-    localparam STATE_DATA_SEND_2 = 11;
-    localparam STATE_DATA_SEND_3 = 12;
-    localparam STATE_DATA_RECV_1 = 13;
-    localparam STATE_DATA_RECV_2 = 14;
-    localparam STATE_STOP = 15;
+    localparam STATE_SELECTED = 10;
 
-    localparam STATE_ENDING = 16;
+    localparam STATE_DATA_SEND_1 = 11;
+    localparam STATE_DATA_SEND_2 = 12;
+    localparam STATE_DATA_SEND_3 = 13;
+    localparam STATE_DATA_RECV_1 = 14;
+    localparam STATE_DATA_RECV_2 = 15;
+    localparam STATE_STOP = 16;
+
+    localparam STATE_ENDING = 17;
 
     reg [7:0] state = STATE_IDLE;
     reg [7:0] next_state;
@@ -171,7 +173,12 @@ module channel (
                 end
                 else if (a_status_in)
                 begin
-                    // TODO: this is "short-busy"
+                    next_status_tdata = a_bus_in;
+                    next_status_tvalid = 1;
+
+                    $display("chan: received status byte 0x%h (short busy)", next_status_tdata);
+
+                    next_state = STATE_SELECTION_SHORT_BUSY;
                 end
                 else if (a_select_in)
                 begin
@@ -236,6 +243,8 @@ module channel (
                     next_status_tdata = a_bus_in;
                     next_status_tvalid = 1;
 
+                    $display("chan: received status byte 0x%h", next_status_tdata);
+
                     next_state = STATE_SELECTION_SERVICE_OUT;
                 end
             end
@@ -264,6 +273,16 @@ module channel (
                 end
             end
 
+            STATE_SELECTION_SHORT_BUSY:
+            begin
+                next_address_out = 1;
+
+                if (!a_status_in)
+                begin
+                    next_state = STATE_IDLE;
+                end
+            end
+
             STATE_SELECTED:
             begin
                 if (a_service_in)
@@ -287,6 +306,8 @@ module channel (
                     next_status_tdata = a_bus_in;
                     next_status_tvalid = 1;
 
+                    $display("chan: received status byte 0x%h", next_status_tdata);
+
                     next_state = STATE_ENDING;
                 end
             end
@@ -305,7 +326,7 @@ module channel (
 
                     next_bus_out = data_send_tdata;
 
-                    $display("chan: sending byte %h to device", data_send_tdata);
+                    $display("chan: sending byte 0x%h", data_send_tdata);
 
                     next_state = STATE_DATA_SEND_2;
                 end
@@ -345,7 +366,7 @@ module channel (
                 begin
                     next_data_recv_tvalid = 1'b0;
 
-                    $display("chan: received byte %h from device", data_recv_tdata);
+                    $display("chan: received byte 0x%h", data_recv_tdata);
 
                     next_state = STATE_DATA_RECV_2;
                 end
@@ -378,7 +399,7 @@ module channel (
 
                 if (!a_status_in)
                 begin
-                    if (status_tdata[5]) // DE
+                    if (status_tdata[3]) // DE
                     begin
                         next_state = STATE_IDLE;
                     end

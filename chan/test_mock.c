@@ -14,6 +14,7 @@
 #include "mock_cu.h"
 
 int test_no_cu(struct chan *chan);
+int test_busy(struct chan *chan, struct mock_cu *mock_cu);
 int test_read_command(char *case_name, struct chan *chan, uint16_t count,
         struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
 int test_write_command(char *case_name, struct chan *chan, uint16_t count,
@@ -49,6 +50,7 @@ int main(void)
     printf("READY\n");
 
     test_no_cu(&chan);
+    test_busy(&chan, &mock_cu);
     test_read_command("read_command_cu_more", &chan, 6, &mock_cu, 16, 6);
     test_read_command("read_command_cu_less", &chan, 16, &mock_cu, 6, 6);
     test_write_command("write_command_cu_more", &chan, 6, &mock_cu, 16, 6);
@@ -70,7 +72,32 @@ int test_no_cu(struct chan *chan)
     int result = chan_exec(chan, 0x10, 0x03 /* NOP */, NULL, 0);
 
     if (result != -3) {
-        printf("FAIL: Expected not operational condition code\n");
+        printf("FAIL: expected not operational condition code\n");
+        return -1;
+    }
+
+    printf("PASS\n");
+
+    return 0;
+}
+
+int test_busy(struct chan *chan, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_busy\n");
+
+    mock_cu_arrange(mock_cu, true, false, 0);
+
+    int result = chan_exec(chan, 0xff, 0x03 /* NOP */, NULL, 0);
+
+    if (result != -4) {
+        printf("FAIL: expected busy result\n");
+        return -1;
+    }
+
+    uint8_t status = chan_device_status(chan);
+
+    if (!(status & CHAN_STATUS_BUSY)) {
+        printf("FAIL: expected busy status\n");
         return -1;
     }
 
@@ -86,7 +113,7 @@ int test_read_command(char *case_name, struct chan *chan, uint16_t count,
 
     udmabuf_clear(&chan->udmabuf, 0);
 
-    mock_cu_arrange(mock_cu, 0, mock_cu_limit);
+    mock_cu_arrange(mock_cu, false, false, mock_cu_limit);
 
     uint8_t cmd = 0x02; // READ
 
@@ -127,7 +154,7 @@ int test_write_command(char *case_name, struct chan *chan, uint16_t count,
 
     udmabuf_clear(&chan->udmabuf, 0);
 
-    mock_cu_arrange(mock_cu, 0, mock_cu_limit);
+    mock_cu_arrange(mock_cu, false, false, mock_cu_limit);
 
     uint8_t cmd = 0x01; // WRITE
 
@@ -161,7 +188,7 @@ int test_nop_command(struct chan *chan, struct mock_cu *mock_cu)
 {
     printf("TEST: test_nop_command\n");
 
-    mock_cu_arrange(mock_cu, 0, 0);
+    mock_cu_arrange(mock_cu, false, false, 0);
 
     uint8_t cmd = 0x03; // NOP
 

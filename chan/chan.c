@@ -65,6 +65,31 @@ int chan_close(struct chan *chan)
     return result;
 }
 
+int chan_test(struct chan *chan, uint8_t addr)
+{
+    // Channel is active...
+    if (chan->regs[REG_STATUS_1] & 0x01) {
+        return -2;
+    }
+
+    chan->regs[REG_CCW_1] = (0x00 /* TEST */ << 24) | 0;
+    chan->regs[REG_CCW_2] = chan->udmabuf.addr;
+
+    chan->regs[REG_CONTROL_2] = (addr << 24) | 0x01; // Start...
+
+    while (chan->regs[REG_STATUS_1] & 0x01) {
+        usleep(100);
+    }
+
+    uint8_t condition_code = (uint8_t) ((chan->regs[REG_STATUS_1] & 0xc0) >> 6);
+
+    if (condition_code != 0) {
+        return -3;
+    }
+
+    return 0;
+}
+
 ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
 {
     if (count > 0 && buf == NULL) {
@@ -103,23 +128,31 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
         return -3;
     }
 
-    uint32_t status_2 = chan->regs[REG_STATUS_2];
+    uint8_t device_status = chan_device_status(chan);
 
-    uint8_t device_status = (uint8_t) (status_2 >> 24);
+    printf("device_status = 0x%.2x\n", device_status);
 
-    if (device_status != 0x30) {
-        printf("device_status = 0x%.2x\n", device_status);
-        return -1;
+    if (device_status & CHAN_STATUS_BUSY) {
+        return -4;
+    }
+
+    if (!(device_status & CHAN_STATUS_CE)) {
+        return -5;
     }
 
     // The count in the status register is a "residual" count.
-    size_t actual_count = count - (uint16_t) status_2;
+    size_t actual_count = count - (uint16_t) chan->regs[REG_STATUS_2];
 
     if (is_read_cmd(cmd) && actual_count > 0) {
         udmabuf_copy_from_dma(&chan->udmabuf, buf, actual_count);
     }
 
     return actual_count;
+}
+
+uint8_t chan_device_status(struct chan *chan)
+{
+    return (uint8_t) (chan->regs[REG_STATUS_2] >> 24);
 }
 
 void config(struct chan *chan, bool enable, bool frontend_enable)

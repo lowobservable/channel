@@ -46,13 +46,13 @@ module mock_cu (
 
     // ...
     input wire mock_busy,
+    input wire mock_short_busy,
     input wire [15:0] mock_limit,
 
     output reg [7:0] command,
     output reg [15:0] count
 );
     parameter ADDRESS = 8'hff;
-    parameter ENABLE_SHORT_BUSY = 0;
 
     reg [7:0] bus_in;
     wire bus_in_parity;
@@ -139,7 +139,7 @@ module mock_cu (
 
     reg [7:0] state = 0;
 
-    reg [7:0] status = 8'b0011_0000; // CE + DE
+    reg [7:0] status = 8'b0000_1100; // CE + DE
 
     always @(posedge clk)
     begin
@@ -161,9 +161,11 @@ module mock_cu (
                     begin
                         selection_y <= 1'b0; // Intercept the selection
 
-                        if (mock_busy && ENABLE_SHORT_BUSY)
+                        if (mock_short_busy)
                         begin
-                            // TODO...
+                            status <= 8'b0001_0000; // BUSY
+
+                            state <= 99;
                         end
                         else
                         begin
@@ -216,7 +218,7 @@ module mock_cu (
 
                     if (mock_busy)
                     begin
-                        status <= 8'b0000_1000; // BUSY
+                        status <= 8'b0001_0000; // BUSY
 
                         state <= 6;
                     end
@@ -238,7 +240,7 @@ module mock_cu (
                     end
                     else if (command == 8'h03 /* NOP */)
                     begin
-                        status <= 8'b0011_0000; // CE + DE
+                        status <= 8'b0000_1100; // CE + DE
 
                         state <= 6;
                     end
@@ -246,7 +248,7 @@ module mock_cu (
                     begin
                         // SET COMMAND REJECT IN SENSE
 
-                        status <= 8'b0111_0000; // CE + DE + UC
+                        status <= 8'b0000_1110; // CE + DE + UC
 
                         state <= 6;
                     end
@@ -266,13 +268,27 @@ module mock_cu (
                     end
                 end
 
+                99: // Short busy
+                begin
+                    // SPEC: operational in is not raised for short busy
+
+                    bus_in <= status;
+                    status_in <= 1;
+
+                    if (!selection_x)
+                    begin
+                        status_in <= 0;
+                        state <= 0;
+                    end
+                end
+
                 7:
                 begin
                     operational_in <= 1;
 
                     if (!service_out)
                     begin
-                        if (status[3] || (status[4] && status[5]))
+                        if (status[4] || (status[3] && status[2]))
                         begin
                             state <= 0;
                         end
@@ -302,7 +318,7 @@ module mock_cu (
                         // Kinda hacky way to show this once per byte...
                         if (service_in == 0)
                         begin
-                            $display("cu: sending byte %h to channel", count[7:0] + 8'b1);
+                            $display("cu: sending byte 0x%h to channel", count[7:0] + 8'b1);
                         end
 
                         if (command_out)
@@ -328,7 +344,7 @@ module mock_cu (
                     begin
                         if (count == mock_limit)
                         begin
-                            status <= 8'b0011_0000; // CE + DE
+                            status <= 8'b0000_1100; // CE + DE
                             state <= 10;
                         end
                         else
@@ -353,7 +369,7 @@ module mock_cu (
                         end
                         else if (service_out)
                         begin
-                            $display("cu: received byte %h from channel", bus_out);
+                            $display("cu: received byte 0x%h from channel", bus_out);
 
                             count <= count + 1;
 
@@ -369,7 +385,7 @@ module mock_cu (
                     begin
                         if (count == mock_limit)
                         begin
-                            status <= 8'b0011_0000; // CE + DE
+                            status <= 8'b0000_1100; // CE + DE
                             state <= 10;
                         end
                         else
@@ -383,7 +399,7 @@ module mock_cu (
                 begin
                     if (!command_out)
                     begin
-                        status <= 8'b0011_0000; // CE + DE
+                        status <= 8'b0000_1100; // CE + DE
                         state <= 10;
                     end
                 end

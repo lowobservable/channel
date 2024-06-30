@@ -30,10 +30,15 @@ module channel_tb;
     wire [1:0] channel_condition_code;
 
     reg [7:0] channel_count;
+    reg [7:0] channel_status;
+
+    wire [7:0] channel_status_tdata;
+    wire channel_status_tvalid;
 
     reg [7:0] channel_data_send_tdata;
     reg channel_data_send_tvalid = 0;
     wire channel_data_send_tready;
+
     wire channel_data_recv_tvalid;
     reg channel_data_recv_tready = 0;
 
@@ -66,9 +71,13 @@ module channel_tb;
         .stop(channel_stop),
         .condition_code(channel_condition_code),
 
+        .status_tdata(channel_status_tdata),
+        .status_tvalid(channel_status_tvalid),
+
         .data_send_tdata(channel_data_send_tdata),
         .data_send_tvalid(channel_data_send_tvalid),
         .data_send_tready(channel_data_send_tready),
+
         .data_recv_tvalid(channel_data_recv_tvalid),
         .data_recv_tready(channel_data_recv_tready)
     );
@@ -76,11 +85,11 @@ module channel_tb;
     wire terminator;
 
     reg cu_mock_busy = 0;
+    reg cu_mock_short_busy = 0;
     reg [15:0] cu_mock_limit = 0;
 
     mock_cu #(
-        .ADDRESS(8'h1a),
-        .ENABLE_SHORT_BUSY(0)
+        .ADDRESS(8'h1a)
     ) cu (
         .clk(clk),
 
@@ -121,6 +130,7 @@ module channel_tb;
         .a_suppress_out(),
 
         .mock_busy(cu_mock_busy),
+        .mock_short_busy(cu_mock_short_busy),
         .mock_limit(cu_mock_limit)
     );
 
@@ -139,6 +149,7 @@ module channel_tb;
 
         test_no_cu;
         test_busy;
+        test_short_busy;
         test_read_command_cu_more;
         test_read_command_cu_less;
         test_write_command_cu_more;
@@ -158,6 +169,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
+        cu_mock_short_busy = 0;
 
         start_channel(8'h10, 8'h02 /* READ */, 6);
 
@@ -180,6 +192,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 1;
+        cu_mock_short_busy = 0;
 
         start_channel(8'h1a, 8'h02 /* READ */, 6);
 
@@ -187,7 +200,32 @@ module channel_tb;
 
         `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
 
+        `assert_equal(channel_status, 8'h10, "status should be BUSY");
+
         $display("END: test_busy");
+    end
+    endtask
+
+    task test_short_busy;
+    begin
+        $display("START: test_short_busy");
+
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+
+        #3;
+
+        cu_mock_busy = 0;
+        cu_mock_short_busy = 1;
+
+        start_channel(8'h1a, 8'h02 /* READ */, 6);
+
+        #200;
+
+        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+
+        `assert_equal(channel_status, 8'h10, "status should be BUSY");
+
+        $display("END: test_short_busy");
     end
     endtask
 
@@ -200,6 +238,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
+        cu_mock_short_busy = 0;
         cu_mock_limit = 16; // CU can provide 16 bytes
 
         start_channel(8'h1a, 8'h02 /* READ */, 6);
@@ -223,6 +262,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
+        cu_mock_short_busy = 0;
         cu_mock_limit = 6; // CU can provide 6 bytes
 
         start_channel(8'h1a, 8'h02 /* READ */, 16);
@@ -246,6 +286,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
+        cu_mock_short_busy = 0;
         cu_mock_limit = 16; // CU can accept 16 bytes
 
         start_channel(8'h1a, 8'h01 /* WRITE */, 6);
@@ -269,6 +310,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
+        cu_mock_short_busy = 0;
         cu_mock_limit = 6; // CU can accept 6 bytes
 
         start_channel(8'h1a, 8'h01 /* WRITE */, 16);
@@ -292,6 +334,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
+        cu_mock_short_busy = 0;
 
         start_channel(8'h1a, 8'h03 /* NOP */, 0);
 
@@ -312,6 +355,7 @@ module channel_tb;
         #3;
 
         cu_mock_busy = 0;
+        cu_mock_short_busy = 0;
 
         start_channel(8'h1a, 8'hff, 6);
 
@@ -344,6 +388,11 @@ module channel_tb;
 
     always @(posedge clk)
     begin
+        if (channel_status_tvalid)
+        begin
+            channel_status <= channel_status_tdata;
+        end
+
         channel_stop <= 0;
 
         channel_data_send_tvalid <= 0;

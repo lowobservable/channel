@@ -10,7 +10,7 @@
 
 #include "chan.h"
 
-int test_no_cu(struct chan *chan);
+void test(struct chan *chan);
 
 int main(void)
 {
@@ -30,25 +30,22 @@ int main(void)
 
     printf("READY\n");
 
-    test_no_cu(&chan);
+    test(&chan);
 
     chan_close(&chan);
 
     close(mem_fd);
 }
 
-int test_no_cu(struct chan *chan)
+void test(struct chan *chan)
 {
-    printf("TEST: test_no_cu\n");
+    int result = chan_test(chan, 0x60);
 
-    int result = chan_exec(chan, 0x10, 0x03 /* NOP */, NULL, 0);
-
-    if (result != -3) {
-        printf("FAIL: Expected not operational condition code\n");
-        return -1;
+    if (result < 0) {
+        printf("result = %d\n", result);
     }
 
-    printf("PASS\n");
+    uint8_t status = chan_device_status(chan);
 
-    return 0;
+    printf("status = 0x%.2x\n", status);
 }
