@@ -122,6 +122,12 @@ module channel (
         case (state)
             STATE_IDLE:
             begin
+                // Leave bus out low when not idle to reduce driver current.
+                //
+                // TODO: Compute parity when needed then we could leave that
+                // low here too.
+                next_bus_out = 8'b0;
+
                 if (start)
                 begin
                     next_condition_code = 0;
