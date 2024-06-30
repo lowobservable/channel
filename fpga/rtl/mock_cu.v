@@ -150,6 +150,8 @@ module mock_cu (
             case (state)
                 0:
                 begin
+                    // Avoid corrupting the bus when not active...
+                    bus_in <= 8'b0;
                     operational_in <= 0;
                     address_in <= 0;
                     status_in <= 0;
