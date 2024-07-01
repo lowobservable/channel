@@ -60,7 +60,7 @@ int main(void)
 
     mock_cu_close(&mock_cu);
 
-    chan_close(&chan);
+    chan_close(&chan, true);
 
     close(mem_fd);
 }

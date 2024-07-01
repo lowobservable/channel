@@ -25,7 +25,7 @@ struct chan {
 
 int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path, bool frontend_enable);
 
-int chan_close(struct chan *chan);
+int chan_close(struct chan *chan, bool disable);
 
 int chan_test(struct chan *chan, uint8_t addr);
 

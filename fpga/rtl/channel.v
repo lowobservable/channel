@@ -198,7 +198,7 @@ module channel (
 
             STATE_SELECTION_ADDRESS_IN:
             begin
-                next_hold_out = 1; // TODO: Can this be done at the same time?
+                next_hold_out = 1;
                 next_select_out = 1;
 
                 // TODO: what happens if bus_in != addres???
@@ -214,8 +214,10 @@ module channel (
             begin
                 // SPEC: 'Hold out' with 'select out' may drop any time after
                 // 'address in' rises.
-
-                // TODO: they go up with channel controlled burst, right?
+                //
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
 
                 next_bus_out = command;
 
@@ -230,6 +232,10 @@ module channel (
 
             STATE_SELECTION_COMMAND_OUT_2:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 next_command_out = 1;
 
                 if (!a_address_in)
@@ -242,6 +248,10 @@ module channel (
 
             STATE_SELECTION_STATUS_IN:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 if (a_status_in)
                 begin
                     // NOTE: for now we always "accept" status - we'll check in
@@ -257,6 +267,10 @@ module channel (
 
             STATE_SELECTION_SERVICE_OUT:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 next_service_out = 1;
 
                 if (!a_status_in)
@@ -291,6 +305,10 @@ module channel (
 
             STATE_SELECTED:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 if (a_service_in)
                 begin
                     if (command[0] /* WRITE or CONTROL */) // TODO: not NOP...
@@ -320,6 +338,10 @@ module channel (
 
             STATE_DATA_SEND_1:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 if (stop)
                 begin
                     next_data_send_tready = 1'b0;
@@ -340,6 +362,10 @@ module channel (
 
             STATE_DATA_SEND_2:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 // SPEC: The channel delays raising of the signal on the outbound
                 // tag lines so that the information on 'bus out' precedes the
                 // signal on the outbound tag line by at least 100 nanoseconds.
@@ -351,6 +377,10 @@ module channel (
 
             STATE_DATA_SEND_3:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 next_service_out = 1;
 
                 if (!a_service_in)
@@ -361,6 +391,10 @@ module channel (
 
             STATE_DATA_RECV_1:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 if (stop)
                 begin
                     // TODO: this might be illegal per AXI-Stream spec...
@@ -380,6 +414,10 @@ module channel (
 
             STATE_DATA_RECV_2:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 next_service_out = 1;
 
                 if (!a_service_in)
@@ -390,6 +428,10 @@ module channel (
 
             STATE_STOP:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 next_command_out = 1;
 
                 if (!a_service_in)
@@ -405,14 +447,7 @@ module channel (
 
                 if (!a_status_in)
                 begin
-                    if (status_tdata[3]) // DE
-                    begin
-                        next_state = STATE_IDLE;
-                    end
-                    else
-                    begin
-                        next_state = STATE_SELECTED;
-                    end
+                    next_state = STATE_IDLE;
                 end
             end
         endcase

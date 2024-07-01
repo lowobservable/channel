@@ -44,13 +44,15 @@ int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path,
     return 0;
 }
 
-int chan_close(struct chan *chan)
+int chan_close(struct chan *chan, bool disable)
 {
     if (chan == NULL) {
         return 0;
     }
 
-    config(chan, false, false);
+    if (disable) {
+        config(chan, false, false);
+    }
 
     int result = 0;
 
@@ -136,8 +138,22 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
         return -4;
     }
 
+    // We expect channel end...
     if (!(device_status & CHAN_STATUS_CE)) {
         return -5;
+    }
+
+    // Wait for device end...
+    while (!(device_status & CHAN_STATUS_DE)) {
+        usleep(250000); // 250ms
+
+        if (chan_test(chan, addr) < 0) {
+            return -6;
+        }
+
+        device_status = chan_device_status(chan);
+
+        printf("device_status = 0x%.2x\n", device_status);
     }
 
     // The count in the status register is a "residual" count.
