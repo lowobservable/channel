@@ -171,6 +171,11 @@ uint8_t chan_device_status(struct chan *chan)
     return (uint8_t) (chan->regs[REG_STATUS_2] >> 24);
 }
 
+bool chan_request_in(struct chan *chan)
+{
+    return chan->regs[REG_STATUS_1] & 0x02;
+}
+
 void config(struct chan *chan, bool enable, bool frontend_enable)
 {
     chan->regs[REG_CONTROL_1] = (frontend_enable << 31) | (enable << 1);

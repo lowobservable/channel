@@ -33,4 +33,6 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
 
 uint8_t chan_device_status(struct chan *chan);
 
+bool chan_request_in(struct chan *chan);
+
 #endif

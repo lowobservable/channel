@@ -16,6 +16,8 @@ int exec_nop(struct chan *chan, uint8_t addr);
 int exec_basic_sense(struct chan *chan, uint8_t addr);
 int exec_sense_id(struct chan *chan, uint8_t addr);
 int exec_erase_write(struct chan *chan, uint8_t addr);
+int exec_read_modified(struct chan *chan, uint8_t addr);
+void wait_for_request_in(struct chan *chan);
 
 int main(void)
 {
@@ -37,7 +39,7 @@ int main(void)
 
     test(&chan, 0x60);
 
-    chan_close(&chan, false);
+    chan_close(&chan, true);
 
     close(mem_fd);
 }
@@ -71,6 +73,38 @@ void test(struct chan *chan, uint8_t addr)
 
     if (exec_erase_write(chan, addr) < 0) {
         return;
+    }
+
+    while (true) {
+        wait_for_request_in(chan);
+
+        int result = chan_test(chan, addr);
+
+        if (result < 0) {
+            printf("result = %d\n", result);
+            return;
+        }
+
+        uint8_t status = chan_device_status(chan);
+
+        if (status == 0x00) {
+            continue;
+        }
+
+        printf("status = 0x%.2x\n", status);
+
+        if (status & CHAN_STATUS_ATTN) {
+            printf("got ATTN...\n");
+
+            if (exec_read_modified(chan, addr) < 0) {
+                return;
+            }
+
+            // To unlock the keyboard...
+            if (exec_erase_write(chan, addr) < 0) {
+                return;
+            }
+        }
     }
 }
 
@@ -111,12 +145,12 @@ int exec_basic_sense(struct chan *chan, uint8_t addr)
 
     size_t count = result;
 
+    printf("\tcount = %d\n", count);
+
     if (count < 1) {
         printf("\texpected at least 1 byte, got %d\n", count);
         return -1;
     }
-
-    printf("\tcount = %d\n", count);
 
     dump(buf, count);
 
@@ -142,6 +176,8 @@ int exec_sense_id(struct chan *chan, uint8_t addr)
 
     size_t count = result;
 
+    printf("\tcount = %d\n", count);
+
     if (count < 4) {
         printf("\texpected at least 4 bytes, got %d\n", count);
         return -1;
@@ -152,7 +188,6 @@ int exec_sense_id(struct chan *chan, uint8_t addr)
         return -1;
     }
 
-    printf("\tcount = %d\n", count);
     printf("\tCU = %.2x%.2x-%.2x\n", buf[1], buf[2], buf[3]);
 
     return 0;
@@ -184,5 +219,54 @@ int exec_erase_write(struct chan *chan, uint8_t addr)
 
     printf("\tcount = %d\n", count);
 
+    if (count != 19) {
+        printf("\texpected to write 19 bytes\n");
+        return -1;
+    }
+
     return 0;
+}
+
+int exec_read_modified(struct chan *chan, uint8_t addr)
+{
+    printf("READ MODIFIED...\n");
+
+    uint8_t buf[64];
+
+    ssize_t result = chan_exec(chan, addr, 0x06 /* READ MODIFIED */, buf, 64);
+
+    if (result < 0) {
+        printf("\tresult = %d\n", result);
+        return -1;
+    }
+
+    uint8_t status = chan_device_status(chan);
+
+    printf("\tstatus = 0x%.2x\n", status);
+
+    size_t count = result;
+
+    printf("\tcount = %d\n", count);
+
+    if (count < 1) {
+        printf("\texpected at least 1 byte, got %d\n", count);
+        return -1;
+    }
+
+    printf("\tAID = 0x%.2x\n", buf[0]);
+
+    if (buf[0] == 0xf3 /* PF3 */) {
+        printf("Got PF3, exiting...\n");
+
+        return -1;
+    }
+
+    return 0;
+}
+
+void wait_for_request_in(struct chan *chan)
+{
+    while (!chan_request_in(chan)) {
+        usleep(250000); // 250ms
+    }
 }
