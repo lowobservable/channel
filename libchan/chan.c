@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -132,28 +131,18 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
 
     uint8_t device_status = chan_device_status(chan);
 
-    printf("device_status = 0x%.2x\n", device_status);
-
     if (device_status & CHAN_STATUS_BUSY) {
         return -4;
     }
 
-    // We expect channel end...
-    if (!(device_status & CHAN_STATUS_CE)) {
+    // We expect channel end and device end...
+    if (!((device_status & CHAN_STATUS_CE) && (device_status & CHAN_STATUS_DE))) {
         return -5;
     }
 
-    // Wait for device end...
-    while (!(device_status & CHAN_STATUS_DE)) {
-        usleep(250000); // 250ms
-
-        if (chan_test(chan, addr) < 0) {
-            return -6;
-        }
-
-        device_status = chan_device_status(chan);
-
-        printf("device_status = 0x%.2x\n", device_status);
+    // We don't expect unit check or unit exception...
+    if (device_status & CHAN_STATUS_UC || device_status & CHAN_STATUS_UX) {
+        return -6;
     }
 
     // The count in the status register is a "residual" count.

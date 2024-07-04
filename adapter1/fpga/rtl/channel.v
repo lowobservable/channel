@@ -327,7 +327,19 @@ module channel (
                 end
                 else if (a_status_in)
                 begin
-                    next_status_tdata = a_bus_in;
+                    // TODO: This is a hack, according to the PoP:
+                    //
+                    // | The channel subsystem does not modify the status bits received
+                    // | from the I/O device. These bits appear in the SCSW as received
+                    // | over the channel path.
+                    //
+                    // Which, I think, is why most assembly programs accumulate the device
+                    // status using OC and test the accumulated status for channel and and
+                    // device end.
+                    //
+                    // For now, we'll accumulate the status here until we have request in
+                    // and status interrupts implemented.
+                    next_status_tdata = status_tdata | a_bus_in;
                     next_status_tvalid = 1;
 
                     $display("chan: received status byte 0x%h", next_status_tdata);
@@ -436,18 +448,30 @@ module channel (
 
                 if (!a_service_in)
                 begin
-                    // TODO: We are waiting for ending status!!!
+                    // We are still waiting on an ending sequence...
                     next_state = STATE_SELECTED;
                 end
             end
 
             STATE_ENDING:
             begin
+                // TODO: Only if channel controlled burst...
+                next_hold_out = 1;
+                next_select_out = 1;
+
                 next_service_out = 1;
 
                 if (!a_status_in)
                 begin
-                    next_state = STATE_IDLE;
+                    if (status_tdata[3] /* CE */ && status_tdata[2] /* DE */)
+                    begin
+                        next_state = STATE_IDLE;
+                    end
+                    else
+                    begin
+                        // We are still waiting on channel and device end...
+                        next_state = STATE_SELECTED;
+                    end
                 end
             end
         endcase
