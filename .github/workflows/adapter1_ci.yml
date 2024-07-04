@@ -1,0 +1,27 @@
+name: adapter1 CI
+
+on:
+  push:
+    paths:
+      - adapter1/**
+      - .github/workflows/adapter1_ci.yml
+
+jobs:
+  test_fpga:
+    name: Test FPGA
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: adapter1/fpga
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Icarus Verilog
+        run: |
+          sudo apt-get update
+          sudo apt-get install iverilog
+
+      - name: Run tests
+        run: make tests

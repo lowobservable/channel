@@ -23,7 +23,7 @@ lint:
 	done
 
 tests:
-	$(MAKE) -C tests
+	$(MAKE) -C tests tests
 
 $(PROJECT).xpr: create_project.tcl
 	$(VIVADO) -mode batch -nojournal -nolog -source $<
