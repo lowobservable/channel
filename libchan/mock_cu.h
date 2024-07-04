@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
 
 struct mock_cu {
     uintptr_t addr;
@@ -15,8 +14,8 @@ int mock_cu_open(struct mock_cu *mock_cu, uintptr_t addr, int mem_fd);
 
 int mock_cu_close(struct mock_cu *mock_cu);
 
-int mock_cu_arrange(struct mock_cu *mock_cu, bool busy, bool short_busy, uint16_t limit);
+void mock_cu_arrange(struct mock_cu *mock_cu, bool busy, bool short_busy, uint16_t limit);
 
-int mock_cu_assert(struct mock_cu *mock_cu, int8_t expected_command, int16_t expected_count);
+bool mock_cu_assert(struct mock_cu *mock_cu, int8_t expected_command, int16_t expected_count);
 
 #endif

@@ -74,7 +74,7 @@ int chan_test(struct chan *chan, uint8_t addr)
         return -2;
     }
 
-    chan->regs[REG_CCW_1] = (0x00 /* TEST */ << 24) | 0;
+    chan->regs[REG_CCW_1] = 0x00 /* TEST */ << 24;
     chan->regs[REG_CCW_2] = chan->udmabuf.addr;
 
     chan->regs[REG_CONTROL_2] = (addr << 24) | 0x01; // Start...

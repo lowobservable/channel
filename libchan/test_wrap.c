@@ -15,13 +15,13 @@ int main(int argc, char **argv)
     volatile uint32_t *regs;
 
     if ((mem_fd = mem_open()) < 0) {
-        perror("e1");
-        return -1;
+        perror("mem_open");
+        return EXIT_FAILURE;
     }
 
     if ((base = real_map(0x41200000, 1024, mem_fd)) == NULL) {
-        perror("e2");
-        return -1;
+        perror("real_map");
+        return EXIT_FAILURE;
     }
 
     regs = base;
@@ -42,7 +42,7 @@ int main(int argc, char **argv)
         printf("r = 0x%08" PRIx32 "\n", receivers);
     } else if (strcmp(argv[1], "b") == 0) {
         for (int i = 19; i > 0; i--) {
-            uint32_t drivers = (1 << 31) | (1 << i);
+            uint32_t drivers = ((uint32_t) 1 << 31) | ((uint32_t) 1 << i);
 
             regs[0] = drivers;
 
@@ -62,4 +62,6 @@ int main(int argc, char **argv)
     }
 
     close(mem_fd);
+
+    return EXIT_SUCCESS;
 }

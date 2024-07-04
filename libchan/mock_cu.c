@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <stddef.h>
-#include <unistd.h>
+#include <stdbool.h>
 
 #include <real.h>
 
@@ -38,14 +37,12 @@ int mock_cu_close(struct mock_cu *mock_cu)
     return 0;
 }
 
-int mock_cu_arrange(struct mock_cu *mock_cu, bool busy, bool short_busy, uint16_t limit)
+void mock_cu_arrange(struct mock_cu *mock_cu, bool busy, bool short_busy, uint16_t limit)
 {
     mock_cu->regs[REG_CONTROL] = (limit << 16) | (short_busy << 2) | (busy << 1);
-
-    return 0;
 }
 
-int mock_cu_assert(struct mock_cu *mock_cu, int8_t expected_command, int16_t expected_count)
+bool mock_cu_assert(struct mock_cu *mock_cu, int8_t expected_command, int16_t expected_count)
 {
     uint32_t status = mock_cu->regs[REG_STATUS];
 
@@ -54,13 +51,13 @@ int mock_cu_assert(struct mock_cu *mock_cu, int8_t expected_command, int16_t exp
 
     if (expected_command >= 0 && command != expected_command) {
         printf("ASSERT: expected command = 0x%.2x, actual = 0x%.2x\n", expected_command, command);
-        return -1;
+        return false;
     }
 
     if (expected_count >= 0 && count != expected_count) {
         printf("ASSERT: expected count = %d, actual = %d\n", expected_count, count);
-        return -1;
+        return false;
     }
 
-    return 0;
+    return true;
 }
