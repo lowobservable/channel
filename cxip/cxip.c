@@ -1,4 +1,4 @@
-// insmod u-dma-buf.ko udmabuf0=1024
+// insmod u-dma-buf.ko udmabuf0=16000
 
 #define _GNU_SOURCE // for accept4
 
@@ -17,14 +17,18 @@
 #include <chan.h>
 #include <mock_cu.h>
 
-uint8_t xxx_buf[1024];
+#define MSG_BUF_SIZE 16000
+
+#define ADDR 0x60
+
+uint8_t xxx_buf[MSG_BUF_SIZE];
 size_t xxx_buf_len = 0;
 
 bool serve(int listen_sock, struct chan *chan);
 void handle_client(int sock, struct chan *chan);
 void handle_message(int sock, struct chan *chan, uint8_t *msg, size_t msg_len);
+void test_and_send_status(int sock, struct chan *chan, uint8_t addr);
 void purge_status(struct chan *chan, uint8_t addr);
-void handle_request_in(int sock, struct chan *chan);
 
 int main(int argc, char **argv)
 {
@@ -140,7 +144,7 @@ bool serve(int listen_sock, struct chan *chan)
                     client_sock = sock;
 
 xxx_buf_len = 0; // Reset, for new client...
-purge_status(chan, 0x60 /* TODO */);
+purge_status(chan, ADDR);
 
                     printf("CONNECTED\n");
 
@@ -151,6 +155,8 @@ purge_status(chan, 0x60 /* TODO */);
                         perror("epoll_ctl");
                         return false;
                     }
+
+                    //test_and_send_status(client_sock, chan, ADDR /* TODO */);
                 } else {
                     printf("CONNECTION REJECTED\n");
 
@@ -178,7 +184,9 @@ purge_status(chan, 0x60 /* TODO */);
         // Check for request in.
         if (client_sock != -1) {
             if (chan_request_in(chan)) {
-                handle_request_in(client_sock, chan);
+                printf("REQUEST IN...\n");
+
+                test_and_send_status(client_sock, chan, ADDR /* TODO */);
             }
         }
     }
@@ -191,7 +199,7 @@ void handle_client(int sock, struct chan *chan)
     // First, read as much as we can into the buffer.
     uint8_t *buf_p = xxx_buf + xxx_buf_len;
 
-    size_t buf_remaining = 1024 - xxx_buf_len;
+    size_t buf_remaining = MSG_BUF_SIZE - xxx_buf_len;
 
     //printf("before reads, buf_len = %zu, buf_remaining = %zu\n", xxx_buf_len, buf_remaining);
 
@@ -245,7 +253,7 @@ void handle_client(int sock, struct chan *chan)
 
 void handle_message(int sock, struct chan *chan, uint8_t *msg, size_t msg_len)
 {
-    uint8_t buf[1024];
+    uint8_t buf[MSG_BUF_SIZE];
 
     if (msg_len < 1) {
         return;
@@ -288,11 +296,68 @@ void handle_message(int sock, struct chan *chan, uint8_t *msg, size_t msg_len)
 
         printf("\taddr = %.2x, cmd = %.2x, flags = %.2x, count = %zu\n", addr, cmd, flags, count);
 
-        ssize_t result = chan_exec(chan, addr, cmd, data, count);
+        ssize_t result = chan_exec(chan, ADDR /* TODO */, cmd, data, count);
 
         uint8_t device_status = chan_device_status(chan);
 
+        /*
+        ssize_t result;
+        uint8_t device_status;
+
+        if (cmd == 0x03) {
+            result = 0;
+            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE;
+        } else if (cmd == 0xe4) {
+            data[0] = 0xff;
+            data[1] = 0x12;
+            data[2] = 0x34;
+            data[3] = 0x56;
+            result = 4;
+            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE;
+        } else if (cmd == 0x02) {
+            int i;
+            for (i = 0; i < count; i++) {
+                data[i] = i + 1;
+            }
+            result = count;
+            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE;
+        } else if (cmd == 0x01) {
+            result = count;
+            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE;
+        } else {
+            result = 0;
+            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE | CHAN_STATUS_UC;
+        }
+        */
+
         printf("\tresult = %zd, status = %.2x\n", result, device_status);
+
+        // special hack for DE...
+        if ((device_status & CHAN_STATUS_CE) && !(device_status & CHAN_STATUS_DE)) {
+            result = 0;
+
+            // wait for it via request in...
+            printf("\tgot CE without DE, waiting for DE via request in...\n");
+
+            while (!chan_request_in(chan)) {
+                usleep(100000); // 100ms
+            }
+
+            int test_result = chan_test(chan, ADDR /* TODO */);
+
+            if (test_result < 0) {
+                printf("\ttest result = %d\n", test_result);
+                return;
+            }
+
+            device_status |= chan_device_status(chan);
+
+            printf("\tupdated status = %.2x\n", device_status);
+
+            if (!(device_status & CHAN_STATUS_DE)) {
+                printf("\tstill no DE...\n");
+            }
+        }
 
         buf[2] = 4; // EXEC RESPONSE
 
@@ -318,6 +383,34 @@ void handle_message(int sock, struct chan *chan, uint8_t *msg, size_t msg_len)
         if (write(sock, buf, msg_len + 2) < msg_len + 2) {
             perror("write");
         }
+
+        printf("\tdone\n");
+    }
+}
+
+void test_and_send_status(int sock, struct chan *chan, uint8_t addr)
+{
+    uint8_t buf[MSG_BUF_SIZE];
+
+    int result = chan_test(chan, addr);
+
+    if (result < 0) {
+        printf("\tresult = %d\n", result);
+        return;
+    }
+
+    uint8_t device_status = chan_device_status(chan);
+
+    printf("\tstatus = %.2x\n", device_status);
+
+    buf[0] = 0;
+    buf[1] = 3;
+    buf[2] = 5; // STATUS
+    buf[3] = addr;
+    buf[4] = device_status;
+
+    if (write(sock, buf, 5) < 5) {
+        perror("write");
     }
 }
 
@@ -343,35 +436,5 @@ void purge_status(struct chan *chan, uint8_t addr)
         }
 
         sleep(1);
-    }
-}
-
-void handle_request_in(int sock, struct chan *chan)
-{
-    uint8_t buf[1024];
-
-    printf("REQUEST IN\n");
-
-    uint8_t addr = 0x60; // TODO
-
-    int result = chan_test(chan, addr);
-
-    if (result < 0) {
-        printf("\tresult = %d\n", result);
-        return;
-    }
-
-    uint8_t device_status = chan_device_status(chan);
-
-    printf("\tstatus = %.2x\n", device_status);
-
-    buf[0] = 0;
-    buf[1] = 3;
-    buf[2] = 5; // STATUS
-    buf[3] = addr;
-    buf[4] = device_status;
-
-    if (write(sock, buf, 5) < 5) {
-        perror("write");
     }
 }

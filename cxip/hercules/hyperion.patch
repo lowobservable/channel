@@ -1,0 +1,14 @@
+diff --git a/Makefile.in b/Makefile.in
+index c8d15092..2749718e 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -3598,6 +3598,9 @@ uninstall-hook:
+ 
+ #---------------------------------------------------------------------------
+ 
++cxip.so: cxip.o
++	gcc -shared -fPIC -o $@ $<
++
+ check:
+ 	$(top_srcdir)/tests/runtest  $(top_srcdir)/tests
+ 
