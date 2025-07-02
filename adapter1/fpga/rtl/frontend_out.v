@@ -1,6 +1,20 @@
+// Copyright (c) 2023, Andrew Kay
+//
+// Permission to use, copy, modify, and/or distribute this software for any
+// purpose with or without fee is hereby granted, provided that the above
+// copyright notice and this permission notice appear in all copies.
+//
+// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+// WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+// MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+// ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+// WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+// ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+// OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 `default_nettype none
 
-module frontend_a (
+module frontend_out (
     input wire clk,
     input wire reset,
     input wire enable,
@@ -91,28 +105,13 @@ module frontend_a (
         data_in_n_d <= { data_in_n_d[0], a_data_in_n };
         disconnect_in_n_d <= { disconnect_in_n_d[0], a_disconnect_in_n };
         metering_in_n_d <= { metering_in_n_d[0], a_metering_in_n };
-
-        if (reset)
-        begin
-            bus_in_n_d <= 16'b0;
-            bus_in_parity_n_d <= 2'b0;
-            mark_0_in_n_d <= 2'b0;
-            request_in_n_d <= 2'b0;
-            select_in_n_d <= 2'b0;
-            operational_in_n_d <= 2'b0;
-            address_in_n_d <= 2'b0;
-            status_in_n_d <= 2'b0;
-            service_in_n_d <= 2'b0;
-            data_in_n_d <= 2'b0;
-            disconnect_in_n_d <= 2'b0;
-            metering_in_n_d <= 2'b0;
-        end
     end
 
     always @(posedge clk)
     begin
         if (enable)
         begin
+            // The TI SN751730 receiver output is inverted.
             b_bus_in <= ~bus_in_n_d[15:8];
             b_bus_in_parity <= ~bus_in_parity_n_d[1];
             b_mark_0_in <= ~mark_0_in_n_d[1];
@@ -177,7 +176,6 @@ module frontend_a (
             a_metering_out <= b_metering_out;
             a_clock_out <= b_clock_out;
 
-            // Enabling drivers causes a negligible current draw increase.
             driver_enable <= 1'b1;
         end
         else

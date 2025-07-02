@@ -28,7 +28,7 @@
 #    "/home/user/work/rtl/axi_channel.v"
 #    "/home/user/work/rtl/axi_mock_cu.v"
 #    "/home/user/work/rtl/channel.v"
-#    "/home/user/work/rtl/frontend_a.v"
+#    "/home/user/work/rtl/frontend_out.v"
 #    "/home/user/work/rtl/mock_cu.v"
 #    "/home/user/work/rtl/tee.v"
 #    "/home/user/work/rtl/wrap_test.v"
@@ -54,7 +54,7 @@ proc checkRequiredFiles { origin_dir} {
  "[file normalize "$origin_dir/rtl/axi_channel.v"]"\
  "[file normalize "$origin_dir/rtl/axi_mock_cu.v"]"\
  "[file normalize "$origin_dir/rtl/channel.v"]"\
- "[file normalize "$origin_dir/rtl/frontend_a.v"]"\
+ "[file normalize "$origin_dir/rtl/frontend_out.v"]"\
  "[file normalize "$origin_dir/rtl/mock_cu.v"]"\
  "[file normalize "$origin_dir/rtl/tee.v"]"\
  "[file normalize "$origin_dir/rtl/wrap_test.v"]"\
@@ -197,7 +197,7 @@ set files [list \
  [file normalize "${origin_dir}/rtl/axi_channel.v" ]\
  [file normalize "${origin_dir}/rtl/axi_mock_cu.v" ]\
  [file normalize "${origin_dir}/rtl/channel.v" ]\
- [file normalize "${origin_dir}/rtl/frontend_a.v" ]\
+ [file normalize "${origin_dir}/rtl/frontend_out.v" ]\
  [file normalize "${origin_dir}/rtl/mock_cu.v" ]\
  [file normalize "${origin_dir}/rtl/tee.v" ]\
  [file normalize "${origin_dir}/rtl/wrap_test.v" ]\
@@ -282,7 +282,7 @@ set obj [get_filesets utils_1]
 proc cr_bd_design_1 { parentCell } {
 # The design that will be created by this Tcl proc contains the following 
 # module references:
-# axi_channel, axi_mock_cu, frontend_a, wrap_test
+# axi_channel, axi_mock_cu, frontend_out, wrap_test
 
 
 
@@ -333,7 +333,7 @@ proc cr_bd_design_1 { parentCell } {
      set list_check_mods "\ 
   axi_channel\
   axi_mock_cu\
-  frontend_a\
+  frontend_out\
   wrap_test\
   "
 
@@ -619,13 +619,13 @@ proc cr_bd_design_1 { parentCell } {
      return 1
    }
   
-  # Create instance: frontend_a_0, and set properties
-  set block_name frontend_a
-  set block_cell_name frontend_a_0
-  if { [catch {set frontend_a_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
+  # Create instance: frontend_out_0, and set properties
+  set block_name frontend_out
+  set block_cell_name frontend_out_0
+  if { [catch {set frontend_out_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
      catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
      return 1
-   } elseif { $frontend_a_0 eq "" } {
+   } elseif { $frontend_out_0 eq "" } {
      catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
      return 1
    }
@@ -687,18 +687,18 @@ proc cr_bd_design_1 { parentCell } {
   connect_bd_intf_net -intf_net processing_system7_0_MDIO_ETHERNET_0 [get_bd_intf_ports MDIO_ETHERNET_0_0] [get_bd_intf_pins processing_system7_0/MDIO_ETHERNET_0]
 
   # Create port connections
-  connect_bd_net -net A_ADDRESS_IN_N_1 [get_bd_ports A_ADDRESS_IN_N] [get_bd_pins frontend_a_0/a_address_in_n]
-  connect_bd_net -net A_BUS_IN_N_1 [get_bd_ports A_BUS_IN_N] [get_bd_pins frontend_a_0/a_bus_in_n]
-  connect_bd_net -net A_BUS_IN_PARITY_N_1 [get_bd_ports A_BUS_IN_PARITY_N] [get_bd_pins frontend_a_0/a_bus_in_parity_n]
-  connect_bd_net -net A_DATA_IN_N_1 [get_bd_ports A_DATA_IN_N] [get_bd_pins frontend_a_0/a_data_in_n]
-  connect_bd_net -net A_DISCONNECT_IN_N_1 [get_bd_ports A_DISCONNECT_IN_N] [get_bd_pins frontend_a_0/a_disconnect_in_n]
-  connect_bd_net -net A_MARK_0_IN_N_1 [get_bd_ports A_MARK_0_IN_N] [get_bd_pins frontend_a_0/a_mark_0_in_n]
-  connect_bd_net -net A_METERING_IN_N_1 [get_bd_ports A_METERING_IN_N] [get_bd_pins frontend_a_0/a_metering_in_n]
-  connect_bd_net -net A_OPERATIONAL_IN_N_1 [get_bd_ports A_OPERATIONAL_IN_N] [get_bd_pins frontend_a_0/a_operational_in_n]
-  connect_bd_net -net A_REQUEST_IN_N_1 [get_bd_ports A_REQUEST_IN_N] [get_bd_pins frontend_a_0/a_request_in_n]
-  connect_bd_net -net A_SELECT_IN_N_1 [get_bd_ports A_SELECT_IN_N] [get_bd_pins frontend_a_0/a_select_in_n]
-  connect_bd_net -net A_SERVICE_IN_N_1 [get_bd_ports A_SERVICE_IN_N] [get_bd_pins frontend_a_0/a_service_in_n]
-  connect_bd_net -net A_STATUS_IN_N_1 [get_bd_ports A_STATUS_IN_N] [get_bd_pins frontend_a_0/a_status_in_n]
+  connect_bd_net -net A_ADDRESS_IN_N_1 [get_bd_ports A_ADDRESS_IN_N] [get_bd_pins frontend_out_0/a_address_in_n]
+  connect_bd_net -net A_BUS_IN_N_1 [get_bd_ports A_BUS_IN_N] [get_bd_pins frontend_out_0/a_bus_in_n]
+  connect_bd_net -net A_BUS_IN_PARITY_N_1 [get_bd_ports A_BUS_IN_PARITY_N] [get_bd_pins frontend_out_0/a_bus_in_parity_n]
+  connect_bd_net -net A_DATA_IN_N_1 [get_bd_ports A_DATA_IN_N] [get_bd_pins frontend_out_0/a_data_in_n]
+  connect_bd_net -net A_DISCONNECT_IN_N_1 [get_bd_ports A_DISCONNECT_IN_N] [get_bd_pins frontend_out_0/a_disconnect_in_n]
+  connect_bd_net -net A_MARK_0_IN_N_1 [get_bd_ports A_MARK_0_IN_N] [get_bd_pins frontend_out_0/a_mark_0_in_n]
+  connect_bd_net -net A_METERING_IN_N_1 [get_bd_ports A_METERING_IN_N] [get_bd_pins frontend_out_0/a_metering_in_n]
+  connect_bd_net -net A_OPERATIONAL_IN_N_1 [get_bd_ports A_OPERATIONAL_IN_N] [get_bd_pins frontend_out_0/a_operational_in_n]
+  connect_bd_net -net A_REQUEST_IN_N_1 [get_bd_ports A_REQUEST_IN_N] [get_bd_pins frontend_out_0/a_request_in_n]
+  connect_bd_net -net A_SELECT_IN_N_1 [get_bd_ports A_SELECT_IN_N] [get_bd_pins frontend_out_0/a_select_in_n]
+  connect_bd_net -net A_SERVICE_IN_N_1 [get_bd_ports A_SERVICE_IN_N] [get_bd_pins frontend_out_0/a_service_in_n]
+  connect_bd_net -net A_STATUS_IN_N_1 [get_bd_ports A_STATUS_IN_N] [get_bd_pins frontend_out_0/a_status_in_n]
   connect_bd_net -net axi_channel_0_a_address_out [get_bd_pins axi_channel_0/a_address_out] [get_bd_pins axi_mock_cu_0/b_address_out]
   connect_bd_net -net axi_channel_0_a_bus_out [get_bd_pins axi_channel_0/a_bus_out] [get_bd_pins axi_mock_cu_0/b_bus_out]
   connect_bd_net -net axi_channel_0_a_bus_out_parity [get_bd_pins axi_channel_0/a_bus_out_parity] [get_bd_pins axi_mock_cu_0/b_bus_out_parity]
@@ -709,17 +709,17 @@ proc cr_bd_design_1 { parentCell } {
   connect_bd_net -net axi_channel_0_a_service_out [get_bd_pins axi_channel_0/a_service_out] [get_bd_pins axi_mock_cu_0/b_service_out]
   connect_bd_net -net axi_channel_0_a_suppress_out [get_bd_pins axi_channel_0/a_suppress_out] [get_bd_pins axi_mock_cu_0/b_suppress_out]
   connect_bd_net -net axi_channel_0_channel_active [get_bd_pins axi_channel_0/channel_active] [get_bd_ports GPIO_0]
-  connect_bd_net -net axi_channel_0_frontend_enable [get_bd_pins axi_channel_0/frontend_enable] [get_bd_ports GPIO_1] [get_bd_pins frontend_a_0/enable]
+  connect_bd_net -net axi_channel_0_frontend_enable [get_bd_pins axi_channel_0/frontend_enable] [get_bd_ports GPIO_1] [get_bd_pins frontend_out_0/enable]
   connect_bd_net -net axi_gpio_0_gpio_io_o [get_bd_pins axi_gpio_0/gpio_io_o] [get_bd_pins wrap_test_0/test_driver]
-  connect_bd_net -net axi_mock_cu_0_a_address_out [get_bd_pins axi_mock_cu_0/a_address_out] [get_bd_pins frontend_a_0/b_address_out] [get_bd_pins ila_0/probe5]
-  connect_bd_net -net axi_mock_cu_0_a_bus_out [get_bd_pins axi_mock_cu_0/a_bus_out] [get_bd_pins frontend_a_0/b_bus_out] [get_bd_pins ila_0/probe0]
-  connect_bd_net -net axi_mock_cu_0_a_bus_out_parity [get_bd_pins axi_mock_cu_0/a_bus_out_parity] [get_bd_pins frontend_a_0/b_bus_out_parity] [get_bd_pins ila_0/probe1]
-  connect_bd_net -net axi_mock_cu_0_a_command_out [get_bd_pins axi_mock_cu_0/a_command_out] [get_bd_pins frontend_a_0/b_command_out] [get_bd_pins ila_0/probe6]
-  connect_bd_net -net axi_mock_cu_0_a_hold_out [get_bd_pins axi_mock_cu_0/a_hold_out] [get_bd_pins frontend_a_0/b_hold_out] [get_bd_pins ila_0/probe3]
-  connect_bd_net -net axi_mock_cu_0_a_operational_out [get_bd_pins axi_mock_cu_0/a_operational_out] [get_bd_pins frontend_a_0/b_operational_out] [get_bd_pins ila_0/probe2]
-  connect_bd_net -net axi_mock_cu_0_a_select_out [get_bd_pins axi_mock_cu_0/a_select_out] [get_bd_pins frontend_a_0/b_select_out] [get_bd_pins ila_0/probe4]
-  connect_bd_net -net axi_mock_cu_0_a_service_out [get_bd_pins axi_mock_cu_0/a_service_out] [get_bd_pins frontend_a_0/b_service_out] [get_bd_pins ila_0/probe7]
-  connect_bd_net -net axi_mock_cu_0_a_suppress_out [get_bd_pins axi_mock_cu_0/a_suppress_out] [get_bd_pins frontend_a_0/b_suppress_out] [get_bd_pins ila_0/probe8]
+  connect_bd_net -net axi_mock_cu_0_a_address_out [get_bd_pins axi_mock_cu_0/a_address_out] [get_bd_pins frontend_out_0/b_address_out] [get_bd_pins ila_0/probe5]
+  connect_bd_net -net axi_mock_cu_0_a_bus_out [get_bd_pins axi_mock_cu_0/a_bus_out] [get_bd_pins frontend_out_0/b_bus_out] [get_bd_pins ila_0/probe0]
+  connect_bd_net -net axi_mock_cu_0_a_bus_out_parity [get_bd_pins axi_mock_cu_0/a_bus_out_parity] [get_bd_pins frontend_out_0/b_bus_out_parity] [get_bd_pins ila_0/probe1]
+  connect_bd_net -net axi_mock_cu_0_a_command_out [get_bd_pins axi_mock_cu_0/a_command_out] [get_bd_pins frontend_out_0/b_command_out] [get_bd_pins ila_0/probe6]
+  connect_bd_net -net axi_mock_cu_0_a_hold_out [get_bd_pins axi_mock_cu_0/a_hold_out] [get_bd_pins frontend_out_0/b_hold_out] [get_bd_pins ila_0/probe3]
+  connect_bd_net -net axi_mock_cu_0_a_operational_out [get_bd_pins axi_mock_cu_0/a_operational_out] [get_bd_pins frontend_out_0/b_operational_out] [get_bd_pins ila_0/probe2]
+  connect_bd_net -net axi_mock_cu_0_a_select_out [get_bd_pins axi_mock_cu_0/a_select_out] [get_bd_pins frontend_out_0/b_select_out] [get_bd_pins ila_0/probe4]
+  connect_bd_net -net axi_mock_cu_0_a_service_out [get_bd_pins axi_mock_cu_0/a_service_out] [get_bd_pins frontend_out_0/b_service_out] [get_bd_pins ila_0/probe7]
+  connect_bd_net -net axi_mock_cu_0_a_suppress_out [get_bd_pins axi_mock_cu_0/a_suppress_out] [get_bd_pins frontend_out_0/b_suppress_out] [get_bd_pins ila_0/probe8]
   connect_bd_net -net axi_mock_cu_0_b_address_in [get_bd_pins axi_mock_cu_0/b_address_in] [get_bd_pins axi_channel_0/a_address_in]
   connect_bd_net -net axi_mock_cu_0_b_bus_in [get_bd_pins axi_mock_cu_0/b_bus_in] [get_bd_pins axi_channel_0/a_bus_in]
   connect_bd_net -net axi_mock_cu_0_b_bus_in_parity [get_bd_pins axi_mock_cu_0/b_bus_in_parity] [get_bd_pins axi_channel_0/a_bus_in_parity]
@@ -728,36 +728,36 @@ proc cr_bd_design_1 { parentCell } {
   connect_bd_net -net axi_mock_cu_0_b_select_in [get_bd_pins axi_mock_cu_0/b_select_in] [get_bd_pins axi_channel_0/a_select_in]
   connect_bd_net -net axi_mock_cu_0_b_service_in [get_bd_pins axi_mock_cu_0/b_service_in] [get_bd_pins axi_channel_0/a_service_in]
   connect_bd_net -net axi_mock_cu_0_b_status_in [get_bd_pins axi_mock_cu_0/b_status_in] [get_bd_pins axi_channel_0/a_status_in]
-  connect_bd_net -net frontend_a_0_a_address_out [get_bd_pins frontend_a_0/a_address_out] [get_bd_ports A_ADDRESS_OUT]
-  connect_bd_net -net frontend_a_0_a_bus_out [get_bd_pins frontend_a_0/a_bus_out] [get_bd_ports A_BUS_OUT]
-  connect_bd_net -net frontend_a_0_a_bus_out_parity [get_bd_pins frontend_a_0/a_bus_out_parity] [get_bd_ports A_BUS_OUT_PARITY]
-  connect_bd_net -net frontend_a_0_a_clock_out [get_bd_pins frontend_a_0/a_clock_out] [get_bd_ports A_CLOCK_OUT]
-  connect_bd_net -net frontend_a_0_a_command_out [get_bd_pins frontend_a_0/a_command_out] [get_bd_ports A_COMMAND_OUT]
-  connect_bd_net -net frontend_a_0_a_data_out [get_bd_pins frontend_a_0/a_data_out] [get_bd_ports A_DATA_OUT]
-  connect_bd_net -net frontend_a_0_a_hold_out [get_bd_pins frontend_a_0/a_hold_out] [get_bd_ports A_HOLD_OUT]
-  connect_bd_net -net frontend_a_0_a_mark_0_out [get_bd_pins frontend_a_0/a_mark_0_out] [get_bd_ports A_MARK_0_OUT]
-  connect_bd_net -net frontend_a_0_a_metering_out [get_bd_pins frontend_a_0/a_metering_out] [get_bd_ports A_METERING_OUT]
-  connect_bd_net -net frontend_a_0_a_operational_out [get_bd_pins frontend_a_0/a_operational_out] [get_bd_ports A_OPERATIONAL_OUT]
-  connect_bd_net -net frontend_a_0_a_select_out [get_bd_pins frontend_a_0/a_select_out] [get_bd_ports A_SELECT_OUT]
-  connect_bd_net -net frontend_a_0_a_service_out [get_bd_pins frontend_a_0/a_service_out] [get_bd_ports A_SERVICE_OUT]
-  connect_bd_net -net frontend_a_0_a_suppress_out [get_bd_pins frontend_a_0/a_suppress_out] [get_bd_ports A_SUPPRESS_OUT]
-  connect_bd_net -net frontend_a_0_b_address_in [get_bd_pins frontend_a_0/b_address_in] [get_bd_pins axi_mock_cu_0/a_address_in] [get_bd_pins ila_0/probe14]
-  connect_bd_net -net frontend_a_0_b_bus_in [get_bd_pins frontend_a_0/b_bus_in] [get_bd_pins axi_mock_cu_0/a_bus_in] [get_bd_pins ila_0/probe9]
-  connect_bd_net -net frontend_a_0_b_bus_in_parity [get_bd_pins frontend_a_0/b_bus_in_parity] [get_bd_pins axi_mock_cu_0/a_bus_in_parity] [get_bd_pins ila_0/probe10]
-  connect_bd_net -net frontend_a_0_b_operational_in [get_bd_pins frontend_a_0/b_operational_in] [get_bd_pins axi_mock_cu_0/a_operational_in] [get_bd_pins ila_0/probe13]
-  connect_bd_net -net frontend_a_0_b_request_in [get_bd_pins frontend_a_0/b_request_in] [get_bd_pins axi_mock_cu_0/a_request_in] [get_bd_pins ila_0/probe11]
-  connect_bd_net -net frontend_a_0_b_select_in [get_bd_pins frontend_a_0/b_select_in] [get_bd_pins axi_mock_cu_0/a_select_in] [get_bd_pins ila_0/probe12]
-  connect_bd_net -net frontend_a_0_b_service_in [get_bd_pins frontend_a_0/b_service_in] [get_bd_pins axi_mock_cu_0/a_service_in] [get_bd_pins ila_0/probe16]
-  connect_bd_net -net frontend_a_0_b_status_in [get_bd_pins frontend_a_0/b_status_in] [get_bd_pins axi_mock_cu_0/a_status_in] [get_bd_pins ila_0/probe15]
-  connect_bd_net -net frontend_a_0_driver_enable [get_bd_pins frontend_a_0/driver_enable] [get_bd_ports DRIVER_ENABLE]
+  connect_bd_net -net frontend_out_0_a_address_out [get_bd_pins frontend_out_0/a_address_out] [get_bd_ports A_ADDRESS_OUT]
+  connect_bd_net -net frontend_out_0_a_bus_out [get_bd_pins frontend_out_0/a_bus_out] [get_bd_ports A_BUS_OUT]
+  connect_bd_net -net frontend_out_0_a_bus_out_parity [get_bd_pins frontend_out_0/a_bus_out_parity] [get_bd_ports A_BUS_OUT_PARITY]
+  connect_bd_net -net frontend_out_0_a_clock_out [get_bd_pins frontend_out_0/a_clock_out] [get_bd_ports A_CLOCK_OUT]
+  connect_bd_net -net frontend_out_0_a_command_out [get_bd_pins frontend_out_0/a_command_out] [get_bd_ports A_COMMAND_OUT]
+  connect_bd_net -net frontend_out_0_a_data_out [get_bd_pins frontend_out_0/a_data_out] [get_bd_ports A_DATA_OUT]
+  connect_bd_net -net frontend_out_0_a_hold_out [get_bd_pins frontend_out_0/a_hold_out] [get_bd_ports A_HOLD_OUT]
+  connect_bd_net -net frontend_out_0_a_mark_0_out [get_bd_pins frontend_out_0/a_mark_0_out] [get_bd_ports A_MARK_0_OUT]
+  connect_bd_net -net frontend_out_0_a_metering_out [get_bd_pins frontend_out_0/a_metering_out] [get_bd_ports A_METERING_OUT]
+  connect_bd_net -net frontend_out_0_a_operational_out [get_bd_pins frontend_out_0/a_operational_out] [get_bd_ports A_OPERATIONAL_OUT]
+  connect_bd_net -net frontend_out_0_a_select_out [get_bd_pins frontend_out_0/a_select_out] [get_bd_ports A_SELECT_OUT]
+  connect_bd_net -net frontend_out_0_a_service_out [get_bd_pins frontend_out_0/a_service_out] [get_bd_ports A_SERVICE_OUT]
+  connect_bd_net -net frontend_out_0_a_suppress_out [get_bd_pins frontend_out_0/a_suppress_out] [get_bd_ports A_SUPPRESS_OUT]
+  connect_bd_net -net frontend_out_0_b_address_in [get_bd_pins frontend_out_0/b_address_in] [get_bd_pins axi_mock_cu_0/a_address_in] [get_bd_pins ila_0/probe14]
+  connect_bd_net -net frontend_out_0_b_bus_in [get_bd_pins frontend_out_0/b_bus_in] [get_bd_pins axi_mock_cu_0/a_bus_in] [get_bd_pins ila_0/probe9]
+  connect_bd_net -net frontend_out_0_b_bus_in_parity [get_bd_pins frontend_out_0/b_bus_in_parity] [get_bd_pins axi_mock_cu_0/a_bus_in_parity] [get_bd_pins ila_0/probe10]
+  connect_bd_net -net frontend_out_0_b_operational_in [get_bd_pins frontend_out_0/b_operational_in] [get_bd_pins axi_mock_cu_0/a_operational_in] [get_bd_pins ila_0/probe13]
+  connect_bd_net -net frontend_out_0_b_request_in [get_bd_pins frontend_out_0/b_request_in] [get_bd_pins axi_mock_cu_0/a_request_in] [get_bd_pins ila_0/probe11]
+  connect_bd_net -net frontend_out_0_b_select_in [get_bd_pins frontend_out_0/b_select_in] [get_bd_pins axi_mock_cu_0/a_select_in] [get_bd_pins ila_0/probe12]
+  connect_bd_net -net frontend_out_0_b_service_in [get_bd_pins frontend_out_0/b_service_in] [get_bd_pins axi_mock_cu_0/a_service_in] [get_bd_pins ila_0/probe16]
+  connect_bd_net -net frontend_out_0_b_status_in [get_bd_pins frontend_out_0/b_status_in] [get_bd_pins axi_mock_cu_0/a_status_in] [get_bd_pins ila_0/probe15]
+  connect_bd_net -net frontend_out_0_driver_enable [get_bd_pins frontend_out_0/driver_enable] [get_bd_ports DRIVER_ENABLE]
   connect_bd_net -net proc_sys_reset_0_interconnect_aresetn [get_bd_pins proc_sys_reset_0/interconnect_aresetn] [get_bd_pins axi_interconnect_0/ARESETN] [get_bd_pins axi_interconnect_0/S00_ARESETN] [get_bd_pins axi_interconnect_0/M00_ARESETN] [get_bd_pins axi_interconnect_0/M01_ARESETN] [get_bd_pins axi_protocol_convert_0/aresetn] [get_bd_pins axi_gpio_0/s_axi_aresetn] [get_bd_pins axi_interconnect_0/M02_ARESETN]
   connect_bd_net -net proc_sys_reset_0_peripheral_aresetn [get_bd_pins proc_sys_reset_0/peripheral_aresetn] [get_bd_pins axi_channel_0/aresetn] [get_bd_pins axi_mock_cu_0/aresetn]
-  connect_bd_net -net proc_sys_reset_0_peripheral_reset [get_bd_pins proc_sys_reset_0/peripheral_reset] [get_bd_pins frontend_a_0/reset]
-  connect_bd_net -net processing_system7_0_FCLK_CLK0 [get_bd_pins processing_system7_0/FCLK_CLK0] [get_bd_pins axi_interconnect_0/ACLK] [get_bd_pins proc_sys_reset_0/slowest_sync_clk] [get_bd_pins axi_interconnect_0/S00_ACLK] [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins axi_interconnect_0/M00_ACLK] [get_bd_pins axi_protocol_convert_0/aclk] [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins axi_interconnect_0/M01_ACLK] [get_bd_pins axi_gpio_0/s_axi_aclk] [get_bd_pins axi_interconnect_0/M02_ACLK] [get_bd_pins axi_channel_0/aclk] [get_bd_pins axi_mock_cu_0/aclk] [get_bd_pins frontend_a_0/clk] [get_bd_pins wrap_test_0/clk] [get_bd_pins ila_0/clk]
+  connect_bd_net -net proc_sys_reset_0_peripheral_reset [get_bd_pins proc_sys_reset_0/peripheral_reset] [get_bd_pins frontend_out_0/reset]
+  connect_bd_net -net processing_system7_0_FCLK_CLK0 [get_bd_pins processing_system7_0/FCLK_CLK0] [get_bd_pins axi_interconnect_0/ACLK] [get_bd_pins proc_sys_reset_0/slowest_sync_clk] [get_bd_pins axi_interconnect_0/S00_ACLK] [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins axi_interconnect_0/M00_ACLK] [get_bd_pins axi_protocol_convert_0/aclk] [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins axi_interconnect_0/M01_ACLK] [get_bd_pins axi_gpio_0/s_axi_aclk] [get_bd_pins axi_interconnect_0/M02_ACLK] [get_bd_pins axi_channel_0/aclk] [get_bd_pins axi_mock_cu_0/aclk] [get_bd_pins frontend_out_0/clk] [get_bd_pins wrap_test_0/clk] [get_bd_pins ila_0/clk]
   connect_bd_net -net processing_system7_0_FCLK_CLK3 [get_bd_pins processing_system7_0/FCLK_CLK3] [get_bd_ports FCLK_CLK3_0]
   connect_bd_net -net processing_system7_0_FCLK_RESET0_N [get_bd_pins processing_system7_0/FCLK_RESET0_N] [get_bd_pins proc_sys_reset_0/ext_reset_in]
   connect_bd_net -net wrap_test_0_test_receiver [get_bd_pins wrap_test_0/test_receiver] [get_bd_pins axi_gpio_0/gpio2_io_i]
-  connect_bd_net -net xlconstant_1_dout [get_bd_pins xlconstant_1/dout] [get_bd_pins frontend_a_0/b_mark_0_out] [get_bd_pins frontend_a_0/b_data_out] [get_bd_pins frontend_a_0/b_metering_out] [get_bd_pins frontend_a_0/b_clock_out] [get_bd_pins wrap_test_0/a_bus_in_parity] [get_bd_pins wrap_test_0/a_mark_0_in] [get_bd_pins wrap_test_0/a_request_in] [get_bd_pins wrap_test_0/a_select_in] [get_bd_pins wrap_test_0/a_operational_in] [get_bd_pins wrap_test_0/a_address_in] [get_bd_pins wrap_test_0/a_status_in] [get_bd_pins wrap_test_0/a_service_in] [get_bd_pins wrap_test_0/a_data_in] [get_bd_pins wrap_test_0/a_disconnect_in] [get_bd_pins wrap_test_0/a_metering_in]
+  connect_bd_net -net xlconstant_1_dout [get_bd_pins xlconstant_1/dout] [get_bd_pins frontend_out_0/b_mark_0_out] [get_bd_pins frontend_out_0/b_data_out] [get_bd_pins frontend_out_0/b_metering_out] [get_bd_pins frontend_out_0/b_clock_out] [get_bd_pins wrap_test_0/a_bus_in_parity] [get_bd_pins wrap_test_0/a_mark_0_in] [get_bd_pins wrap_test_0/a_request_in] [get_bd_pins wrap_test_0/a_select_in] [get_bd_pins wrap_test_0/a_operational_in] [get_bd_pins wrap_test_0/a_address_in] [get_bd_pins wrap_test_0/a_status_in] [get_bd_pins wrap_test_0/a_service_in] [get_bd_pins wrap_test_0/a_data_in] [get_bd_pins wrap_test_0/a_disconnect_in] [get_bd_pins wrap_test_0/a_metering_in]
   connect_bd_net -net xlconstant_2_dout [get_bd_pins xlconstant_2/dout] [get_bd_pins wrap_test_0/a_bus_in]
 
   # Create address segments
