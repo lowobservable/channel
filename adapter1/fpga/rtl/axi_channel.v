@@ -118,7 +118,7 @@ module axi_channel (
     reg [7:0] device_status;
     reg [15:0] count;
 
-    channel channel (
+    channel_out_protocol protocol (
         .clk(aclk),
         .enable(channel_enable),
         .reset(reset),

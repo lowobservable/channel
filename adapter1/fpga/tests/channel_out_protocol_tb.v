@@ -2,7 +2,7 @@
 
 `include "assert.v"
 
-module channel_tb;
+module channel_out_protocol_tb;
     reg clk = 0;
 
     wire [7:0] bus_in;
@@ -42,7 +42,7 @@ module channel_tb;
     wire channel_data_recv_tvalid;
     reg channel_data_recv_tready = 0;
 
-    channel channel (
+    channel_out_protocol protocol (
         .clk(clk),
         .enable(1'b1),
         .reset(),
@@ -144,8 +144,8 @@ module channel_tb;
 
     initial
     begin
-        $dumpfile("channel_tb.vcd");
-        $dumpvars(0, channel_tb);
+        $dumpfile("channel_out_protocol_tb.vcd");
+        $dumpvars(0, channel_out_protocol_tb);
 
         test_no_cu;
         test_busy;
@@ -164,7 +164,7 @@ module channel_tb;
     begin
         $display("START: test_no_cu");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -175,7 +175,7 @@ module channel_tb;
 
         #200;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         `assert_equal(channel_condition_code, 3, "condition code should be not operational");
 
@@ -187,7 +187,7 @@ module channel_tb;
     begin
         $display("START: test_busy");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -198,7 +198,7 @@ module channel_tb;
 
         #200;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         `assert_equal(channel_status, 8'h10, "status should be BUSY");
 
@@ -210,7 +210,7 @@ module channel_tb;
     begin
         $display("START: test_short_busy");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -221,7 +221,7 @@ module channel_tb;
 
         #200;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         `assert_equal(channel_status, 8'h10, "status should be BUSY");
 
@@ -233,7 +233,7 @@ module channel_tb;
     begin
         $display("START: test_read_command_cu_more");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -245,7 +245,7 @@ module channel_tb;
 
         #600;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         `assert_equal(channel_count, 0, "count should be 0")
 
@@ -257,7 +257,7 @@ module channel_tb;
     begin
         $display("START: test_read_command_cu_less");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -269,7 +269,7 @@ module channel_tb;
 
         #500;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         `assert_equal(channel_count, 10, "count should be 10")
 
@@ -281,7 +281,7 @@ module channel_tb;
     begin
         $display("START: test_write_command_cu_more");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -293,7 +293,7 @@ module channel_tb;
 
         #500;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         `assert_equal(channel_count, 0, "count should be 0")
 
@@ -305,7 +305,7 @@ module channel_tb;
     begin
         $display("START: test_write_command_cu_less");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -317,7 +317,7 @@ module channel_tb;
 
         #500;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         `assert_equal(channel_count, 10, "count should be 10")
 
@@ -329,7 +329,7 @@ module channel_tb;
     begin
         $display("START: test_nop_command");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -340,7 +340,7 @@ module channel_tb;
 
         #200;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         $display("END: test_nop_command");
     end
@@ -350,7 +350,7 @@ module channel_tb;
     begin
         $display("START: test_invalid_command");
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         #3;
 
@@ -361,7 +361,7 @@ module channel_tb;
 
         #200;
 
-        `assert_equal(channel.state, channel.STATE_IDLE, "channel state should be IDLE")
+        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
 
         $display("END: test_invalid_command");
     end

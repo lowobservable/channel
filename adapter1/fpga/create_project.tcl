@@ -27,17 +27,15 @@
 #    "/home/user/work/rtl/axi_byte_io.v"
 #    "/home/user/work/rtl/axi_channel.v"
 #    "/home/user/work/rtl/axi_mock_cu.v"
-#    "/home/user/work/rtl/channel.v"
+#    "/home/user/work/rtl/channel_out_protocol.v"
 #    "/home/user/work/rtl/frontend_out.v"
 #    "/home/user/work/rtl/mock_cu.v"
 #    "/home/user/work/rtl/tee.v"
 #    "/home/user/work/rtl/wrap_test.v"
 #    "/home/user/work/ebaz4205.xdc"
 #    "/home/user/work/breakout1.xdc"
-#    "/home/user/work/rtl/channel.v"
-#    "/home/user/work/rtl/mock_cu.v"
 #    "/home/user/work/tests/assert.v"
-#    "/home/user/work/tests/channel_tb.v"
+#    "/home/user/work/tests/channel_out_protocol_tb.v"
 #
 # 3. The following remote source files that were added to the original project:-
 #
@@ -53,7 +51,7 @@ proc checkRequiredFiles { origin_dir} {
  "[file normalize "$origin_dir/rtl/axi_byte_io.v"]"\
  "[file normalize "$origin_dir/rtl/axi_channel.v"]"\
  "[file normalize "$origin_dir/rtl/axi_mock_cu.v"]"\
- "[file normalize "$origin_dir/rtl/channel.v"]"\
+ "[file normalize "$origin_dir/rtl/channel_out_protocol.v"]"\
  "[file normalize "$origin_dir/rtl/frontend_out.v"]"\
  "[file normalize "$origin_dir/rtl/mock_cu.v"]"\
  "[file normalize "$origin_dir/rtl/tee.v"]"\
@@ -61,7 +59,7 @@ proc checkRequiredFiles { origin_dir} {
  "[file normalize "$origin_dir/ebaz4205.xdc"]"\
  "[file normalize "$origin_dir/breakout1.xdc"]"\
  "[file normalize "$origin_dir/tests/assert.v"]"\
- "[file normalize "$origin_dir/tests/channel_tb.v"]"\
+ "[file normalize "$origin_dir/tests/channel_out_protocol_tb.v"]"\
   ]
   foreach ifile $files {
     if { ![file isfile $ifile] } {
@@ -196,7 +194,7 @@ set files [list \
  [file normalize "${origin_dir}/rtl/axi_byte_io.v" ]\
  [file normalize "${origin_dir}/rtl/axi_channel.v" ]\
  [file normalize "${origin_dir}/rtl/axi_mock_cu.v" ]\
- [file normalize "${origin_dir}/rtl/channel.v" ]\
+ [file normalize "${origin_dir}/rtl/channel_out_protocol.v" ]\
  [file normalize "${origin_dir}/rtl/frontend_out.v" ]\
  [file normalize "${origin_dir}/rtl/mock_cu.v" ]\
  [file normalize "${origin_dir}/rtl/tee.v" ]\
@@ -250,10 +248,11 @@ set obj [get_filesets sim_1]
 
 # Add local files from the original project
 set files [list \
- [file normalize "${origin_dir}/rtl/channel.v" ]\
+ [file normalize "${origin_dir}/rtl/channel_out_protocol.v" ]\
  [file normalize "${origin_dir}/rtl/mock_cu.v" ]\
+ [file normalize "${origin_dir}/rtl/tee.v" ]\
  [file normalize "${origin_dir}/tests/assert.v" ]\
- [file normalize "${origin_dir}/tests/channel_tb.v" ]\
+ [file normalize "${origin_dir}/tests/channel_out_protocol_tb.v" ]\
 ]
 
 add_files -fileset sim_1 $files
@@ -267,7 +266,7 @@ add_files -fileset sim_1 $files
 # Set 'sim_1' fileset properties
 set obj [get_filesets sim_1]
 set_property -name "source_set" -value "" -objects $obj
-set_property -name "top" -value "channel_tb" -objects $obj
+set_property -name "top" -value "channel_out_protocol_tb" -objects $obj
 set_property -name "top_auto_set" -value "0" -objects $obj
 
 # Set 'utils_1' fileset object
