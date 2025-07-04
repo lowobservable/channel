@@ -16,23 +16,23 @@
 #define CHAN_STATUS_UC      0x02    // Unit Check
 #define CHAN_STATUS_UX      0x01    // Unit Exception
 
-struct chan {
+struct chan_out {
     uintptr_t addr;
     void *base;
     volatile uint32_t *regs;
     struct udmabuf udmabuf;
 };
 
-int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path, bool frontend_enable);
+int chan_out_open(struct chan_out *chan, uintptr_t addr, int mem_fd, char *udmabuf_path, bool frontend_enable);
 
-int chan_close(struct chan *chan, bool disable);
+int chan_out_close(struct chan_out *chan, bool disable);
 
-int chan_test(struct chan *chan, uint8_t addr);
+int chan_out_test(struct chan_out *chan, uint8_t addr);
 
-ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count);
+ssize_t chan_out_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count);
 
-uint8_t chan_device_status(struct chan *chan);
+uint8_t chan_out_device_status(struct chan_out *chan);
 
-bool chan_request_in(struct chan *chan);
+bool chan_out_request_in(struct chan_out *chan);
 
 #endif

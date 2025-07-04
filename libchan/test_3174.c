@@ -16,13 +16,13 @@
 
 iconv_t ebcdic_conv;
 
-bool test(struct chan *chan, uint8_t addr);
-bool exec_nop(struct chan *chan, uint8_t addr);
-bool exec_basic_sense(struct chan *chan, uint8_t addr);
-bool exec_sense_id(struct chan *chan, uint8_t addr);
-bool exec_erase_write(struct chan *chan, uint8_t addr, uint8_t *buf, size_t buf_len);
-bool exec_read_modified(struct chan *chan, uint8_t addr, uint8_t *aid);
-void wait_for_request_in(struct chan *chan);
+bool test(struct chan_out *chan, uint8_t addr);
+bool exec_nop(struct chan_out *chan, uint8_t addr);
+bool exec_basic_sense(struct chan_out *chan, uint8_t addr);
+bool exec_sense_id(struct chan_out *chan, uint8_t addr);
+bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len);
+bool exec_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid);
+void wait_for_request_in(struct chan_out *chan);
 size_t format_screen(uint8_t *buf, size_t buf_size, uint8_t aid);
 ssize_t ebcdic_write(uint8_t *buf, size_t buf_size, char *ascii);
 
@@ -40,9 +40,9 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    struct chan chan;
+    struct chan_out chan;
 
-    if (chan_open(&chan, 0x40000000, mem_fd, "udmabuf0", true) < 0) {
+    if (chan_out_open(&chan, 0x40000000, mem_fd, "udmabuf0", true) < 0) {
         perror("chan_open");
         return EXIT_FAILURE;
     }
@@ -51,7 +51,7 @@ int main(void)
 
     test(&chan, 0x60);
 
-    chan_close(&chan, true);
+    chan_out_close(&chan, true);
 
     close(mem_fd);
 
@@ -60,19 +60,19 @@ int main(void)
     return EXIT_SUCCESS;
 }
 
-bool test(struct chan *chan, uint8_t addr)
+bool test(struct chan_out *chan, uint8_t addr)
 {
     while (true) {
         printf("TEST...\n");
 
-        int result = chan_test(chan, addr);
+        int result = chan_out_test(chan, addr);
 
         if (result < 0) {
             printf("\tresult = %d\n", result);
             return false;
         }
 
-        uint8_t status = chan_device_status(chan);
+        uint8_t status = chan_out_device_status(chan);
 
         printf("\tstatus = 0x%.2x\n", status);
 
@@ -111,14 +111,14 @@ bool test(struct chan *chan, uint8_t addr)
 
         printf("REQUEST IN...\n");
 
-        int result = chan_test(chan, addr);
+        int result = chan_out_test(chan, addr);
 
         if (result < 0) {
             printf("result = %d\n", result);
             return false;
         }
 
-        uint8_t status = chan_device_status(chan);
+        uint8_t status = chan_out_device_status(chan);
 
         if (status == 0x00) {
             continue;
@@ -138,38 +138,38 @@ bool test(struct chan *chan, uint8_t addr)
     return true;
 }
 
-bool exec_nop(struct chan *chan, uint8_t addr)
+bool exec_nop(struct chan_out *chan, uint8_t addr)
 {
     printf("NOP...\n");
 
-    ssize_t result = chan_exec(chan, addr, 0x03 /* NOP */, NULL, 0);
+    ssize_t result = chan_out_exec(chan, addr, 0x03 /* NOP */, NULL, 0);
 
     if (result < 0) {
         printf("\tresult = %zd\n", result);
         return false;
     }
 
-    uint8_t status = chan_device_status(chan);
+    uint8_t status = chan_out_device_status(chan);
 
     printf("\tstatus = 0x%.2x\n", status);
 
     return true;
 }
 
-bool exec_basic_sense(struct chan *chan, uint8_t addr)
+bool exec_basic_sense(struct chan_out *chan, uint8_t addr)
 {
     printf("BASIC SENSE...\n");
 
     uint8_t buf[32];
 
-    ssize_t result = chan_exec(chan, 0x60, 0x04 /* BASIC SENSE */, buf, 32);
+    ssize_t result = chan_out_exec(chan, 0x60, 0x04 /* BASIC SENSE */, buf, 32);
 
     if (result < 0) {
         printf("\tresult = %zd\n", result);
         return false;
     }
 
-    uint8_t status = chan_device_status(chan);
+    uint8_t status = chan_out_device_status(chan);
 
     printf("\tstatus = 0x%.2x\n", status);
 
@@ -187,20 +187,20 @@ bool exec_basic_sense(struct chan *chan, uint8_t addr)
     return true;
 }
 
-bool exec_sense_id(struct chan *chan, uint8_t addr)
+bool exec_sense_id(struct chan_out *chan, uint8_t addr)
 {
     printf("SENSE ID...\n");
 
     uint8_t buf[7];
 
-    ssize_t result = chan_exec(chan, 0x60, 0xe4 /* SENSE ID */, buf, 7);
+    ssize_t result = chan_out_exec(chan, 0x60, 0xe4 /* SENSE ID */, buf, 7);
 
     if (result < 0) {
         printf("\tresult = %zd\n", result);
         return false;
     }
 
-    uint8_t status = chan_device_status(chan);
+    uint8_t status = chan_out_device_status(chan);
 
     printf("\tstatus = 0x%.2x\n", status);
 
@@ -223,18 +223,18 @@ bool exec_sense_id(struct chan *chan, uint8_t addr)
     return true;
 }
 
-bool exec_erase_write(struct chan *chan, uint8_t addr, uint8_t *buf, size_t buf_len)
+bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len)
 {
     printf("ERASE/WRITE...\n");
 
-    ssize_t result = chan_exec(chan, addr, 0x05 /* ERASE/WRITE */, buf, buf_len);
+    ssize_t result = chan_out_exec(chan, addr, 0x05 /* ERASE/WRITE */, buf, buf_len);
 
     if (result < 0) {
         printf("\tresult = %zd\n", result);
         return false;
     }
 
-    uint8_t status = chan_device_status(chan);
+    uint8_t status = chan_out_device_status(chan);
 
     printf("\tstatus = 0x%.2x\n", status);
 
@@ -250,20 +250,20 @@ bool exec_erase_write(struct chan *chan, uint8_t addr, uint8_t *buf, size_t buf_
     return true;
 }
 
-bool exec_read_modified(struct chan *chan, uint8_t addr, uint8_t *aid)
+bool exec_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid)
 {
     printf("READ MODIFIED...\n");
 
     uint8_t buf[64];
 
-    ssize_t result = chan_exec(chan, addr, 0x06 /* READ MODIFIED */, buf, 64);
+    ssize_t result = chan_out_exec(chan, addr, 0x06 /* READ MODIFIED */, buf, 64);
 
     if (result < 0) {
         printf("\tresult = %zd\n", result);
         return false;
     }
 
-    uint8_t status = chan_device_status(chan);
+    uint8_t status = chan_out_device_status(chan);
 
     printf("\tstatus = 0x%.2x\n", status);
 
@@ -285,9 +285,9 @@ bool exec_read_modified(struct chan *chan, uint8_t addr, uint8_t *aid)
     return true;
 }
 
-void wait_for_request_in(struct chan *chan)
+void wait_for_request_in(struct chan_out *chan)
 {
-    while (!chan_request_in(chan)) {
+    while (!chan_out_request_in(chan)) {
         usleep(250000); // 250ms
     }
 }

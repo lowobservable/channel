@@ -14,13 +14,13 @@
 #include "chan.h"
 #include "mock_cu.h"
 
-bool test_no_cu(struct chan *chan);
-bool test_busy(struct chan *chan, struct mock_cu *mock_cu);
-bool test_read_command(char *case_name, struct chan *chan, uint16_t count,
+bool test_no_cu(struct chan_out *chan);
+bool test_busy(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_read_command(char *case_name, struct chan_out *chan, uint16_t count,
          struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
-bool test_write_command(char *case_name, struct chan *chan, uint16_t count,
+bool test_write_command(char *case_name, struct chan_out *chan, uint16_t count,
          struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
-bool test_nop_command(struct chan *chan, struct mock_cu *mock_cu);
+bool test_nop_command(struct chan_out *chan, struct mock_cu *mock_cu);
 
 void buf_arrange(uint8_t *buf, size_t count);
 bool buf_assert(uint8_t *buf, size_t count);
@@ -34,9 +34,9 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    struct chan chan;
+    struct chan_out chan;
 
-    if (chan_open(&chan, 0x40000000, mem_fd, "udmabuf0", false) < 0) {
+    if (chan_out_open(&chan, 0x40000000, mem_fd, "udmabuf0", false) < 0) {
         perror("chan_open");
         return EXIT_FAILURE;
     }
@@ -61,18 +61,18 @@ int main(void)
 
     mock_cu_close(&mock_cu);
 
-    chan_close(&chan, true);
+    chan_out_close(&chan, true);
 
     close(mem_fd);
 
     return EXIT_SUCCESS;
 }
 
-bool test_no_cu(struct chan *chan)
+bool test_no_cu(struct chan_out *chan)
 {
     printf("TEST: test_no_cu\n");
 
-    ssize_t result = chan_exec(chan, 0x10, 0x03 /* NOP */, NULL, 0);
+    ssize_t result = chan_out_exec(chan, 0x10, 0x03 /* NOP */, NULL, 0);
 
     if (result != -3) {
         printf("FAIL: expected not operational condition code\n");
@@ -84,20 +84,20 @@ bool test_no_cu(struct chan *chan)
     return true;
 }
 
-bool test_busy(struct chan *chan, struct mock_cu *mock_cu)
+bool test_busy(struct chan_out *chan, struct mock_cu *mock_cu)
 {
     printf("TEST: test_busy\n");
 
     mock_cu_arrange(mock_cu, true, false, 0);
 
-    ssize_t result = chan_exec(chan, 0xff, 0x03 /* NOP */, NULL, 0);
+    ssize_t result = chan_out_exec(chan, 0xff, 0x03 /* NOP */, NULL, 0);
 
     if (result != -4) {
         printf("FAIL: expected busy result\n");
         return false;
     }
 
-    uint8_t status = chan_device_status(chan);
+    uint8_t status = chan_out_device_status(chan);
 
     if (!(status & CHAN_STATUS_BUSY)) {
         printf("FAIL: expected busy status\n");
@@ -109,7 +109,7 @@ bool test_busy(struct chan *chan, struct mock_cu *mock_cu)
     return true;
 }
 
-bool test_read_command(char *case_name, struct chan *chan, uint16_t count,
+bool test_read_command(char *case_name, struct chan_out *chan, uint16_t count,
         struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
 {
     printf("TEST: %s\n", case_name);
@@ -122,7 +122,7 @@ bool test_read_command(char *case_name, struct chan *chan, uint16_t count,
 
     uint8_t buf[1024];
 
-    ssize_t result = chan_exec(chan, 0xff, cmd, buf, count);
+    ssize_t result = chan_out_exec(chan, 0xff, cmd, buf, count);
 
     if (result < 0) {
         printf("FAIL: unable to start channel\n");
@@ -150,7 +150,7 @@ bool test_read_command(char *case_name, struct chan *chan, uint16_t count,
     return true;
 }
 
-bool test_write_command(char *case_name, struct chan *chan, uint16_t count,
+bool test_write_command(char *case_name, struct chan_out *chan, uint16_t count,
         struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
 {
     printf("TEST: %s\n", case_name);
@@ -165,7 +165,7 @@ bool test_write_command(char *case_name, struct chan *chan, uint16_t count,
 
     buf_arrange(buf, count);
 
-    ssize_t result = chan_exec(chan, 0xff, cmd, buf, count);
+    ssize_t result = chan_out_exec(chan, 0xff, cmd, buf, count);
 
     if (result < 0) {
         printf("FAIL: unable to start channel\n");
@@ -187,7 +187,7 @@ bool test_write_command(char *case_name, struct chan *chan, uint16_t count,
     return true;
 }
 
-bool test_nop_command(struct chan *chan, struct mock_cu *mock_cu)
+bool test_nop_command(struct chan_out *chan, struct mock_cu *mock_cu)
 {
     printf("TEST: test_nop_command\n");
 
@@ -195,7 +195,7 @@ bool test_nop_command(struct chan *chan, struct mock_cu *mock_cu)
 
     uint8_t cmd = 0x03; // NOP
 
-    ssize_t result = chan_exec(chan, 0xff, cmd, NULL, 0);
+    ssize_t result = chan_out_exec(chan, 0xff, cmd, NULL, 0);
 
     if (result < 0) {
         printf("FAIL: unable to start channel\n");

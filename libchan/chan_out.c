@@ -18,11 +18,11 @@
 #define REG_CCW_1 4
 #define REG_CCW_2 5
 
-void config(struct chan *chan, bool enable, bool frontend_enable);
+void config(struct chan_out *chan, bool enable, bool frontend_enable);
 static inline bool is_read_cmd(uint8_t cmd);
 static inline bool is_write_cmd(uint8_t cmd);
 
-int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path, bool frontend_enable)
+int chan_out_open(struct chan_out *chan, uintptr_t addr, int mem_fd, char *udmabuf_path, bool frontend_enable)
 {
     chan->addr = addr;
 
@@ -43,7 +43,7 @@ int chan_open(struct chan *chan, uintptr_t addr, int mem_fd, char *udmabuf_path,
     return 0;
 }
 
-int chan_close(struct chan *chan, bool disable)
+int chan_out_close(struct chan_out *chan, bool disable)
 {
     if (chan == NULL) {
         return 0;
@@ -66,7 +66,7 @@ int chan_close(struct chan *chan, bool disable)
     return result;
 }
 
-int chan_test(struct chan *chan, uint8_t addr)
+int chan_out_test(struct chan_out *chan, uint8_t addr)
 {
     // Channel is active...
     if (chan->regs[REG_STATUS_1] & 0x01) {
@@ -91,7 +91,7 @@ int chan_test(struct chan *chan, uint8_t addr)
     return 0;
 }
 
-ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
+ssize_t chan_out_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
 {
     if (count > 0 && buf == NULL) {
         return -1;
@@ -129,7 +129,7 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
         return -3;
     }
 
-    uint8_t device_status = chan_device_status(chan);
+    uint8_t device_status = chan_out_device_status(chan);
 
     if (device_status & CHAN_STATUS_BUSY) {
         return -4;
@@ -155,17 +155,17 @@ ssize_t chan_exec(struct chan *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, si
     return actual_count;
 }
 
-uint8_t chan_device_status(struct chan *chan)
+uint8_t chan_out_device_status(struct chan_out *chan)
 {
     return (uint8_t) (chan->regs[REG_STATUS_2] >> 24);
 }
 
-bool chan_request_in(struct chan *chan)
+bool chan_out_request_in(struct chan_out *chan)
 {
     return chan->regs[REG_STATUS_1] & 0x02;
 }
 
-void config(struct chan *chan, bool enable, bool frontend_enable)
+void config(struct chan_out *chan, bool enable, bool frontend_enable)
 {
     chan->regs[REG_CONTROL_1] = (frontend_enable << 31) | (enable << 1);
 }

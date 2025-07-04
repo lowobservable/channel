@@ -24,11 +24,11 @@
 uint8_t xxx_buf[MSG_BUF_SIZE];
 size_t xxx_buf_len = 0;
 
-bool serve(int listen_sock, struct chan *chan);
-void handle_client(int sock, struct chan *chan);
-void handle_message(int sock, struct chan *chan, uint8_t *msg, size_t msg_len);
-void test_and_send_status(int sock, struct chan *chan, uint8_t addr);
-void purge_status(struct chan *chan, uint8_t addr);
+bool serve(int listen_sock, struct chan_out *chan);
+void handle_client(int sock, struct chan_out *chan);
+void handle_message(int sock, struct chan_out *chan, uint8_t *msg, size_t msg_len);
+void test_and_send_status(int sock, struct chan_out *chan, uint8_t addr);
+void purge_status(struct chan_out *chan, uint8_t addr);
 
 int main(int argc, char **argv)
 {
@@ -74,9 +74,9 @@ int main(int argc, char **argv)
         printf("WARN: External interface not enabled, acting as loopback\n");
     }
 
-    struct chan chan;
+    struct chan_out chan;
 
-    if (chan_open(&chan, 0x40000000, mem_fd, "udmabuf0", frontend_enable) < 0) {
+    if (chan_out_open(&chan, 0x40000000, mem_fd, "udmabuf0", frontend_enable) < 0) {
         perror("chan_open");
         return EXIT_FAILURE;
     }
@@ -95,7 +95,7 @@ int main(int argc, char **argv)
     }
 
     mock_cu_close(&mock_cu);
-    chan_close(&chan, true);
+    chan_out_close(&chan, true);
 
     close(listen_sock);
     close(mem_fd);
@@ -103,7 +103,7 @@ int main(int argc, char **argv)
     return EXIT_SUCCESS;
 }
 
-bool serve(int listen_sock, struct chan *chan)
+bool serve(int listen_sock, struct chan_out *chan)
 {
     int epfd;
 
@@ -183,7 +183,7 @@ purge_status(chan, ADDR);
 
         // Check for request in.
         if (client_sock != -1) {
-            if (chan_request_in(chan)) {
+            if (chan_out_request_in(chan)) {
                 printf("REQUEST IN...\n");
 
                 test_and_send_status(client_sock, chan, ADDR /* TODO */);
@@ -194,7 +194,7 @@ purge_status(chan, ADDR);
     return true;
 }
 
-void handle_client(int sock, struct chan *chan)
+void handle_client(int sock, struct chan_out *chan)
 {
     // First, read as much as we can into the buffer.
     uint8_t *buf_p = xxx_buf + xxx_buf_len;
@@ -251,7 +251,7 @@ void handle_client(int sock, struct chan *chan)
     }
 }
 
-void handle_message(int sock, struct chan *chan, uint8_t *msg, size_t msg_len)
+void handle_message(int sock, struct chan_out *chan, uint8_t *msg, size_t msg_len)
 {
     uint8_t buf[MSG_BUF_SIZE];
 
@@ -296,9 +296,9 @@ void handle_message(int sock, struct chan *chan, uint8_t *msg, size_t msg_len)
 
         printf("\taddr = %.2x, cmd = %.2x, flags = %.2x, count = %zu\n", addr, cmd, flags, count);
 
-        ssize_t result = chan_exec(chan, ADDR /* TODO */, cmd, data, count);
+        ssize_t result = chan_out_exec(chan, ADDR /* TODO */, cmd, data, count);
 
-        uint8_t device_status = chan_device_status(chan);
+        uint8_t device_status = chan_out_device_status(chan);
 
         /*
         ssize_t result;
@@ -339,18 +339,18 @@ void handle_message(int sock, struct chan *chan, uint8_t *msg, size_t msg_len)
             // wait for it via request in...
             printf("\tgot CE without DE, waiting for DE via request in...\n");
 
-            while (!chan_request_in(chan)) {
+            while (!chan_out_request_in(chan)) {
                 usleep(100000); // 100ms
             }
 
-            int test_result = chan_test(chan, ADDR /* TODO */);
+            int test_result = chan_out_test(chan, ADDR /* TODO */);
 
             if (test_result < 0) {
                 printf("\ttest result = %d\n", test_result);
                 return;
             }
 
-            device_status |= chan_device_status(chan);
+            device_status |= chan_out_device_status(chan);
 
             printf("\tupdated status = %.2x\n", device_status);
 
@@ -388,18 +388,18 @@ void handle_message(int sock, struct chan *chan, uint8_t *msg, size_t msg_len)
     }
 }
 
-void test_and_send_status(int sock, struct chan *chan, uint8_t addr)
+void test_and_send_status(int sock, struct chan_out *chan, uint8_t addr)
 {
     uint8_t buf[MSG_BUF_SIZE];
 
-    int result = chan_test(chan, addr);
+    int result = chan_out_test(chan, addr);
 
     if (result < 0) {
         printf("\tresult = %d\n", result);
         return;
     }
 
-    uint8_t device_status = chan_device_status(chan);
+    uint8_t device_status = chan_out_device_status(chan);
 
     printf("\tstatus = %.2x\n", device_status);
 
@@ -414,20 +414,20 @@ void test_and_send_status(int sock, struct chan *chan, uint8_t addr)
     }
 }
 
-void purge_status(struct chan *chan, uint8_t addr)
+void purge_status(struct chan_out *chan, uint8_t addr)
 {
     // Very hacky... this is no way to do error recovery!
     while (true) {
         printf("TEST...\n");
 
-        int result = chan_test(chan, addr);
+        int result = chan_out_test(chan, addr);
 
         if (result < 0) {
             printf("\tresult = %d\n", result);
             return;
         }
 
-        uint8_t status = chan_device_status(chan);
+        uint8_t status = chan_out_device_status(chan);
 
         printf("\tstatus = 0x%.2x\n", status);
 
