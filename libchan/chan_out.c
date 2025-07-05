@@ -11,12 +11,14 @@
 
 #define REGS_SIZE 1024
 
-#define REG_CONTROL_1 0
-#define REG_CONTROL_2 1
-#define REG_STATUS_1 2
-#define REG_STATUS_2 3
-#define REG_CCW_1 4
-#define REG_CCW_2 5
+#define REG_WRAP_TESTER_1 0
+#define REG_WRAP_TESTER_2 1
+#define REG_CONTROL_1 2
+#define REG_CONTROL_2 3
+#define REG_STATUS_1 4
+#define REG_STATUS_2 5
+#define REG_CCW_1 6
+#define REG_CCW_2 7
 
 void config(struct chan_out *chan, bool enable, bool frontend_enable);
 static inline bool is_read_cmd(uint8_t cmd);
@@ -163,6 +165,17 @@ uint8_t chan_out_device_status(struct chan_out *chan)
 bool chan_out_request_in(struct chan_out *chan)
 {
     return chan->regs[REG_STATUS_1] & 0x02;
+}
+
+void chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver)
+{
+    chan->regs[REG_WRAP_TESTER_1] = ((driver & 0x000fffff) << 12) | 0x01;
+
+    usleep(50000); // 50ms
+
+    *receiver = (chan->regs[REG_WRAP_TESTER_2] >> 12) & 0x000fffff;
+
+    chan->regs[REG_WRAP_TESTER_1] = 0;
 }
 
 void config(struct chan_out *chan, bool enable, bool frontend_enable)

@@ -1,0 +1,95 @@
+// insmod u-dma-buf.ko udmabuf0=16000
+
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <real.h>
+#include <chan.h>
+
+struct wrap_test_case {
+    uint32_t driver;
+    char *driver_name;
+    char *receiver_name;
+};
+
+struct wrap_test_case wrap_test_cases[] = {
+    { 0x00001, "Operational Out", "-" },
+    { 0x00002, "Service Out", "Data In" },
+    { 0x00004, "Hold Out", "Select In" },
+    { 0x00008, "Suppress Out", "Disconnect In" },
+    { 0x00010, "Command Out", "Request In" },
+    { 0x00020, "Data Out", "Service In" },
+    { 0x00040, "Address Out", "Metering In" },
+    { 0x00080, "Select Out", "Address In" },
+    { 0x00100, "Metering Out", "Status In" },
+    { 0x00200, "Clock Out", "Operational In" },
+    { 0x00400, "Mark 0 Out", "Mark 0 In" },
+    { 0x00800, "Data 0 Out", "Data 0 In" },
+    { 0x01000, "Data 1 Out", "Data 1 In" },
+    { 0x02000, "Data 2 Out", "Data 2 In" },
+    { 0x04000, "Data 3 Out", "Data 3 In" },
+    { 0x08000, "Data 4 Out", "Data 4 In" },
+    { 0x10000, "Data 5 Out", "Data 5 In" },
+    { 0x20000, "Data 6 Out", "Data 6 In" },
+    { 0x40000, "Data 7 Out", "Data 7 In" },
+    { 0x80000, "Bus Out Parity", "Bus In Parity" },
+    { 0xfffff, "ALL", "ALL" },
+    { 0x00000, "NONE", "NONE" }
+};
+
+bool wrap_test(struct chan_out *chan);
+
+int main(int argc, char **argv)
+{
+    int mem_fd;
+
+    if ((mem_fd = mem_open()) < 0) {
+        perror("mem_open");
+        return EXIT_FAILURE;
+    }
+
+    struct chan_out chan;
+
+    if (chan_out_open(&chan, 0x40000000, mem_fd, "udmabuf0", true) < 0) {
+        perror("chan_open");
+        return EXIT_FAILURE;
+    }
+
+    bool result = wrap_test(&chan);
+
+    chan_out_close(&chan, true);
+
+    close(mem_fd);
+
+    return (result ? EXIT_SUCCESS : EXIT_FAILURE);
+}
+
+bool wrap_test(struct chan_out *chan)
+{
+    printf("Driver          | Receiver        | Result\n");
+    printf("--------------- | --------------- | ------\n");
+
+    bool result = true;
+
+    size_t len = sizeof(wrap_test_cases) / sizeof(struct wrap_test_case);
+
+    for (size_t index = 0; index < len; index++) {
+        struct wrap_test_case *test_case = &wrap_test_cases[index];
+
+        uint32_t receiver;
+
+        chan_out_wrap_test(chan, test_case->driver, &receiver);
+
+        if (receiver == test_case->driver) {
+            printf("%-15s | %-15s | pass\n", test_case->driver_name, test_case->receiver_name);
+        } else {
+            printf("%-15s | %-15s | FAIL\n", test_case->driver_name, test_case->receiver_name);
+
+            result = false;
+        }
+    }
+
+    return result;
+}

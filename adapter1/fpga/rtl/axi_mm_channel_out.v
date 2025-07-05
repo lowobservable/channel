@@ -87,14 +87,20 @@ module axi_mm_channel_out (
 
     input wire [1:0] m_axi_bresp,
     input wire m_axi_bvalid,
-    output wire m_axi_bready
+    output wire m_axi_bready,
+
+    output reg wrap_tester_enable,
+    output reg [19:0] wrap_tester_driver,
+    input wire [19:0] wrap_tester_receiver
 );
-    localparam REG_CONTROL_1 = 8'h00;
-    localparam REG_CONTROL_2 = 8'h04;
-    localparam REG_STATUS_1 = 8'h08;
-    localparam REG_STATUS_2 = 8'h0c;
-    localparam REG_CCW_1 = 8'h10;
-    localparam REG_CCW_2 = 8'h14;
+    localparam REG_WRAP_TESTER_1 = 8'h00;
+    localparam REG_WRAP_TESTER_2 = 8'h04;
+    localparam REG_CONTROL_1 = 8'h08;
+    localparam REG_CONTROL_2 = 8'h0c;
+    localparam REG_STATUS_1 = 8'h10;
+    localparam REG_STATUS_2 = 8'h14;
+    localparam REG_CCW_1 = 8'h18;
+    localparam REG_CCW_2 = 8'h1c;
 
     initial
     begin
@@ -106,6 +112,8 @@ module axi_mm_channel_out (
         s_axi_awready = 1'b1;
         s_axi_wready = 1'b1;
         s_axi_bvalid = 1'b0;
+
+        wrap_tester_enable = 1'b0;
     end
 
     reg reset = 1'b0;
@@ -185,6 +193,12 @@ module axi_mm_channel_out (
             s_axi_rresp <= 2'b00;
 
             case (s_axi_araddr)
+                REG_WRAP_TESTER_1:
+                    s_axi_rdata <= { wrap_tester_driver, 11'b0, wrap_tester_enable };
+
+                REG_WRAP_TESTER_2:
+                    s_axi_rdata <= { wrap_tester_receiver, 12'b0 };
+
                 REG_CONTROL_1:
                     s_axi_rdata <= { frontend_enable, 29'b0, channel_enable, reset };
 
@@ -262,6 +276,12 @@ module axi_mm_channel_out (
 
             // TODO: should consider s_axi_wstrb
             case (awaddr)
+                REG_WRAP_TESTER_1:
+                begin
+                    wrap_tester_enable <= wdata[0];
+                    wrap_tester_driver <= wdata[31:12];
+                end
+
                 REG_CONTROL_1:
                 begin
                     reset <= wdata[0];
@@ -319,6 +339,8 @@ module axi_mm_channel_out (
             s_axi_wready <= 1'b1;
             s_axi_bresp <= 2'b00;
             s_axi_bvalid <= 1'b0;
+
+            wrap_tester_enable <= 1'b0;
         end
     end
 
