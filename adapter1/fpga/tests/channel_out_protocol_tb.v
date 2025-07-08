@@ -2,8 +2,15 @@
 
 `include "assert.v"
 
+`timescale 10ns / 1ns
+
 module channel_out_protocol_tb;
     reg clk = 0;
+
+    reg protocol_reset = 1;
+    reg [23:0] protocol_in_tdata = 24'b0;
+    reg protocol_in_tvalid = 0;
+    reg protocol_out_tready = 0;
 
     wire [7:0] bus_in;
     wire bus_in_parity;
@@ -23,29 +30,20 @@ module channel_out_protocol_tb;
     wire service_out;
     wire suppress_out;
 
-    reg [7:0] channel_addr;
-    reg [7:0] channel_command;
-    reg channel_start = 0;
-    reg channel_stop = 0;
-    wire [1:0] channel_condition_code;
-
-    reg [7:0] channel_count;
-    reg [7:0] channel_status;
-
-    wire [7:0] channel_status_tdata;
-    wire channel_status_tvalid;
-
-    reg [7:0] channel_data_send_tdata;
-    reg channel_data_send_tvalid = 0;
-    wire channel_data_send_tready;
-
-    wire channel_data_recv_tvalid;
-    reg channel_data_recv_tready = 0;
-
-    channel_out_protocol protocol (
+    channel_out_protocol #(
+        .CLOCKS_PER_100_NS(5),
+        .SYSTEM_RESET_DURATION_100_NS(6) // Reduced for testing, should be 60 (6 μs)
+    ) protocol (
         .clk(clk),
-        .enable(1'b1),
-        .reset(),
+        .reset(protocol_reset),
+
+        .in_tdata(protocol_in_tdata),
+        .in_tvalid(protocol_in_tvalid),
+        .in_tready(),
+
+        .out_tdata(),
+        .out_tvalid(),
+        .out_tready(protocol_out_tready),
 
         .a_bus_in(bus_in),
         .a_bus_in_parity(bus_in_parity),
@@ -63,23 +61,7 @@ module channel_out_protocol_tb;
         .a_status_in(status_in),
         .a_service_in(service_in),
         .a_service_out(service_out),
-        .a_suppress_out(suppress_out),
-
-        .addr(channel_addr),
-        .command(channel_command),
-        .start(channel_start),
-        .stop(channel_stop),
-        .condition_code(channel_condition_code),
-
-        .status_tdata(channel_status_tdata),
-        .status_tvalid(channel_status_tvalid),
-
-        .data_send_tdata(channel_data_send_tdata),
-        .data_send_tvalid(channel_data_send_tvalid),
-        .data_send_tready(channel_data_send_tready),
-
-        .data_recv_tvalid(channel_data_recv_tvalid),
-        .data_recv_tready(channel_data_recv_tready)
+        .a_suppress_out(suppress_out)
     );
 
     wire terminator;
@@ -147,6 +129,9 @@ module channel_out_protocol_tb;
         $dumpfile("channel_out_protocol_tb.vcd");
         $dumpvars(0, channel_out_protocol_tb);
 
+        test_system_reset;
+
+        /*
         test_no_cu;
         test_busy;
         test_short_busy;
@@ -156,10 +141,67 @@ module channel_out_protocol_tb;
         test_write_command_cu_less;
         test_nop_command;
         test_invalid_command;
+        */
 
         $finish;
     end
 
+    task test_system_reset;
+        realtime low_time;
+        realtime low_duration;
+    begin
+        $display("START: test_system_reset");
+
+        // Initial, untimed reset...
+        @(posedge clk)
+        begin
+            protocol_reset <= 0;
+        end
+
+        @(posedge operational_out);
+
+        // Timed reset...
+        @(posedge clk)
+        begin
+            protocol_reset <= 1;
+        end
+
+        @(posedge clk)
+        begin
+            protocol_reset <= 0;
+        end
+
+        @(negedge operational_out)
+        begin
+            low_time = $time;
+        end
+
+        `assert_low(operational_out, "operational_out should be LOW");
+        `assert_low(suppress_out, "suppress_out should be LOW");
+
+        @(posedge operational_out or suppress_out)
+        begin
+            low_duration = $time - low_time;
+        end
+
+        `assert_high(operational_out, "operational_out should be HIGH");
+        `assert_low(suppress_out, "suppress_out should be LOW");
+
+        $display("operational_out and suppress_out were LOW for %0t ns", low_duration);
+
+        if (low_duration * 10 < 600)
+        begin
+            // 6 μs (6000 ns) is scaled to 600 ns for this test.
+            `assert_fail("To ensure a proper reset, 'operational out' and 'suppress out' are down concurrently for at least 6 μs");
+        end
+
+        `assert_high(protocol.in_tready, "in should be TREADY");
+
+        $display("END: test_system_reset");
+    end
+    endtask
+
+    /*
     task test_no_cu;
     begin
         $display("START: test_no_cu");
@@ -171,7 +213,7 @@ module channel_out_protocol_tb;
         cu_mock_busy = 0;
         cu_mock_short_busy = 0;
 
-        start_channel(8'h10, 8'h02 /* READ */, 6);
+        start_channel(8'h10, 8'h02, 6); // READ
 
         #200;
 
@@ -194,7 +236,7 @@ module channel_out_protocol_tb;
         cu_mock_busy = 1;
         cu_mock_short_busy = 0;
 
-        start_channel(8'h1a, 8'h02 /* READ */, 6);
+        start_channel(8'h1a, 8'h02, 6); // READ
 
         #200;
 
@@ -217,7 +259,7 @@ module channel_out_protocol_tb;
         cu_mock_busy = 0;
         cu_mock_short_busy = 1;
 
-        start_channel(8'h1a, 8'h02 /* READ */, 6);
+        start_channel(8'h1a, 8'h02, 6); // READ
 
         #200;
 
@@ -241,7 +283,7 @@ module channel_out_protocol_tb;
         cu_mock_short_busy = 0;
         cu_mock_limit = 16; // CU can provide 16 bytes
 
-        start_channel(8'h1a, 8'h02 /* READ */, 6);
+        start_channel(8'h1a, 8'h02, 6); // READ
 
         #600;
 
@@ -265,7 +307,7 @@ module channel_out_protocol_tb;
         cu_mock_short_busy = 0;
         cu_mock_limit = 6; // CU can provide 6 bytes
 
-        start_channel(8'h1a, 8'h02 /* READ */, 16);
+        start_channel(8'h1a, 8'h02, 16); // READ
 
         #500;
 
@@ -289,7 +331,7 @@ module channel_out_protocol_tb;
         cu_mock_short_busy = 0;
         cu_mock_limit = 16; // CU can accept 16 bytes
 
-        start_channel(8'h1a, 8'h01 /* WRITE */, 6);
+        start_channel(8'h1a, 8'h01, 6); // WRITE
 
         #500;
 
@@ -313,7 +355,7 @@ module channel_out_protocol_tb;
         cu_mock_short_busy = 0;
         cu_mock_limit = 6; // CU can accept 6 bytes
 
-        start_channel(8'h1a, 8'h01 /* WRITE */, 16);
+        start_channel(8'h1a, 8'h01, 16); // WRITE
 
         #500;
 
@@ -336,7 +378,7 @@ module channel_out_protocol_tb;
         cu_mock_busy = 0;
         cu_mock_short_busy = 0;
 
-        start_channel(8'h1a, 8'h03 /* NOP */, 0);
+        start_channel(8'h1a, 8'h03, 0); // NOP
 
         #200;
 
@@ -421,4 +463,5 @@ module channel_out_protocol_tb;
             channel_data_send_tdata <= channel_data_send_tdata + 1;
         end
     end
+    */
 endmodule

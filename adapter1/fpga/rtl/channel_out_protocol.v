@@ -27,8 +27,6 @@ module channel_out_protocol (
 
     // TODO: input wire [1:0] config_type, // selector vs byte mux bs block mux
 
-    output wire request,
-
     // A connection begins at the time 'select out' rises at the control unit
     // for the purpose of executing any sequence or sequences
     // The connection is considered to be ended when 'operational in' is dropped.
@@ -39,12 +37,13 @@ module channel_out_protocol (
     // ---- ---- ---- ---- ---- ----
     // ..00 0001 0000 0000 0000 0000 - Select Requestor  -> Status | Data | Error
     // ..01 0001 AAAA AAAA CCCC CCCC - Initial Selection -> Status | Error
-    //      xxxx AAAA AAAA           - Stop              -> Ack | Error
-    //      xxxx AAAA AAAA           - Accept Status     -> Ack | Error
-    //      xxxx AAAA AAAA           - Stack Status      -> Ack | Error
-    //      xxxx AAAA AAAA           - Suppress Status   -> Ack | Error
+    //      xxxx                   C - Accept Status     -> Ack | Error
+    //      xxxx                     - Stack Status      -> Ack | Error
+    //      xxxx                     - Suppress Status   -> Ack | Error
     //      xxxx AAAA AAAA DDDD DDDD - Send Data         -> Ack | Status | Error
-    //      xxxx AAAA AAAA           - Accept Data       -> Ack | Error
+    //      xxxx                     - Accept Data       -> Ack | Error
+    //      xxxx                     - Stop              -> Ack | Error
+    //      xxxx AAAA AAAA           - Selective Reset   -> Ack | Error
     input wire [23:0] in_tdata,
     input wire in_tvalid,
     output reg in_tready,
@@ -59,6 +58,8 @@ module channel_out_protocol (
     output reg [23:0] out_tdata,
     output reg out_tvalid,
     input wire out_tready,
+
+    output wire request,
 
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
@@ -81,15 +82,16 @@ module channel_out_protocol (
     output reg a_suppress_out
 );
     parameter CLOCKS_PER_100_NS = 5; // 50 MHz clock period is 20 ns
+    parameter SYSTEM_RESET_DURATION_100_NS = 60; // 6 μs is 6000 ns, reduce this for tests
 
     localparam ERROR_INVALID_COMMAND = 8'h01;
 
-    localparam STATE_RESET = 0;
+    localparam STATE_SYSTEM_RESET = 0;
     localparam STATE_IDLE = 1;
 
-    reg [7:0] state = STATE_RESET;
+    reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
-    reg [7:0] state_timer;
+    reg [15:0] state_timer = 0;
 
     reg next_in_tready;
     reg [23:0] next_out_tdata;
@@ -133,13 +135,13 @@ reg device_selected;
         next_suppress_out = 0;
 
         case (state)
-            STATE_RESET:
+            STATE_SYSTEM_RESET:
             begin
                 // SPEC: To ensure a proper reset, 'operational out' and 'suppress
                 // out' are down concurrently for at least 6 microseconds.
-                if (state_timer == CLOCKS_PER_100_NS * 6000)
+                if (state_timer == CLOCKS_PER_100_NS * SYSTEM_RESET_DURATION_100_NS)
                 begin
-                    next_state = STATE_STARTING;
+                    next_state = STATE_IDLE;
                 end
             end
 
@@ -147,8 +149,7 @@ reg device_selected;
             begin
                 next_operational_out = 1;
 
-                // We are ready to accept something if there is no output
-                // pending.
+                // We are ready to accept something if there is no output pending.
                 next_in_tready = ~out_tvalid;
 
                 // Leave bus out low when idle to reduce driver current.
@@ -201,7 +202,7 @@ reg device_selected;
 
         if (reset)
         begin
-            state <= STATE_RESET;
+            state <= STATE_SYSTEM_RESET;
             state_timer <= 0;
 
             in_tready <= 0;
