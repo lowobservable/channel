@@ -42,6 +42,7 @@ module channel_out_protocol (
     // ...1   3h                     - Suppress Status   -> Ack | Error
     //        4h                     - Accept Data       -> Ack | Error
     //        5h                     - Stop              -> Ack | Error
+    //                                 ??? receive
     //        7h AAAA AAAA DDDD DDDD - Send Data         -> Ack | Status | Error
     //        8h AAAA AAAA           - Selective Reset   -> Ack | Error
     input wire [23:0] in_tdata,
@@ -85,27 +86,29 @@ module channel_out_protocol (
     parameter SYSTEM_RESET_DURATION_100_NS = 60; // 6 μs is 6000 ns, reduce this for tests
 
     localparam ERROR_INVALID_IN = 8'h01;
+    localparam ERROR_ADDRESS_NOT_OPERATIONAL = 8'h02;
 
     localparam STATE_SYSTEM_RESET = 0;
     localparam STATE_READY = 1;
     localparam STATE_WAIT = 2;
+    localparam STATE_INITIAL_SELECTION_1 = 3;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
     reg [15:0] state_timer = 0;
 
-    reg next_in_tready;
-    reg [23:0] next_out_tdata;
-    reg next_out_tvalid;
-
 // vvv
-reg [7:0] device_address;
-reg device_selected;
+    reg [7:0] address;
+    reg [7:0] next_address;
+    reg [7:0] command;
+    reg [7:0] next_command;
 // ^^^
 
-    // verilator lint_off UNUSEDSIGNAL
+    reg next_in_tready = 0;
+    reg [23:0] next_out_tdata;
+    reg next_out_tvalid = 0;
+
     wire bus_in_parity_valid;
-    // verilator lint_on UNUSEDSIGNAL
 
     assign bus_in_parity_valid = (~^a_bus_in == a_bus_in_parity); // Odd parity
 
@@ -122,11 +125,14 @@ reg device_selected;
     begin
         next_state = state;
 
+        next_address = address;
+        next_command = command;
+
         next_in_tready = 0;
         next_out_tdata = out_tdata;
         next_out_tvalid = 0;
 
-        next_bus_out = a_bus_out; // ???
+        next_bus_out = a_bus_out;
         next_operational_out = 0;
         next_hold_out = 0;
         next_select_out = 0;
@@ -162,12 +168,23 @@ reg device_selected;
                 begin
                     next_in_tready = 0;
 
-                    // ...
+                    case (in_tdata[23:16])
+                        8'h11:
+                        begin
+                            next_address = in_tdata[15:8];
+                            next_command = in_tdata[7:0];
 
-                    next_out_tdata = error_tdata(ERROR_INVALID_IN);
-                    next_out_tvalid = 1;
+                            next_state = STATE_INITIAL_SELECTION_1;
+                        end
 
-                    next_state = STATE_WAIT;
+                        default:
+                        begin
+                            next_out_tdata = error_tdata(ERROR_INVALID_IN);
+                            next_out_tvalid = 1;
+
+                            next_state = STATE_WAIT;
+                        end
+                    endcase
                 end
             end
 
@@ -184,6 +201,16 @@ reg device_selected;
                     next_state = STATE_READY;
                 end
             end
+
+            STATE_INITIAL_SELECTION_1:
+            begin
+                next_operational_out = 1;
+
+                next_out_tdata = error_tdata(ERROR_ADDRESS_NOT_OPERATIONAL);
+                next_out_tvalid = 1;
+
+                next_state = STATE_WAIT;
+            end
         endcase
     end
 
@@ -198,6 +225,13 @@ reg device_selected;
             state_timer <= 0;
         end
 
+        address <= next_address;
+        command <= next_command;
+
+        in_tready <= next_in_tready;
+        out_tdata <= next_out_tdata;
+        out_tvalid <= next_out_tvalid;
+
         a_bus_out <= next_bus_out;
         a_bus_out_parity <= ~^next_bus_out; // Odd parity
         a_operational_out <= next_operational_out;
@@ -207,10 +241,6 @@ reg device_selected;
         a_command_out <= next_command_out;
         a_service_out <= next_service_out;
         a_suppress_out <= next_suppress_out;
-
-        in_tready <= next_in_tready;
-        out_tdata <= next_out_tdata;
-        out_tvalid <= next_out_tvalid;
 
         if (reset)
         begin

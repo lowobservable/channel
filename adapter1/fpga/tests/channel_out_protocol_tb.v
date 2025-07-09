@@ -131,6 +131,7 @@ module channel_out_protocol_tb;
 
         test_system_reset;
         test_invalid_in;
+        test_initial_selection_address_not_operational;
 
         /*
         test_no_cu;
@@ -209,11 +210,26 @@ module channel_out_protocol_tb;
 
         @(posedge clk);
 
-        exec({ 8'h00, 8'h00, 8'h00 }, out);
+        exec({ 8'h00, 8'h00, 8'h00 }, out); // Invalid
 
         `assert_equal(out, { 8'hff, 8'h01, 8'h00 }, "out should be invalid in error");
 
         $display("END: test_invalid_in");
+    end
+    endtask
+
+    task test_initial_selection_address_not_operational;
+        reg [23:0] out;
+    begin
+        $display("START: test_initial_selection_address_not_operational");
+
+        @(posedge clk);
+
+        exec({ 8'h11, 8'h1b, 8'h02 }, out); // Initial Selection - READ
+
+        `assert_equal(out, { 8'hff, 8'h02, 8'h00 }, "out should be address not operational error");
+
+        $display("END: test_initial_selection_address_not_operational");
     end
     endtask
 
