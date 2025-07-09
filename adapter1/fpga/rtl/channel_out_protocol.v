@@ -35,15 +35,15 @@ module channel_out_protocol (
     // 2222 1111 1111 11
     // 3210 9876 5432 1098 7654 3210
     // ---- ---- ---- ---- ---- ----
-    // ..00 0001 0000 0000 0000 0000 - Select Requestor  -> Status | Data | Error
-    // ..01 0001 AAAA AAAA CCCC CCCC - Initial Selection -> Status | Error
-    //      xxxx                   C - Accept Status     -> Ack | Error
-    //      xxxx                     - Stack Status      -> Ack | Error
-    //      xxxx                     - Suppress Status   -> Ack | Error
-    //      xxxx AAAA AAAA DDDD DDDD - Send Data         -> Ack | Status | Error
-    //      xxxx                     - Accept Data       -> Ack | Error
-    //      xxxx                     - Stop              -> Ack | Error
-    //      xxxx AAAA AAAA           - Selective Reset   -> Ack | Error
+    // ...0   1h 0000 0000 0000 0000 - Select Requestor  -> Status | Data | Error
+    // ...1   1h AAAA AAAA CCCC CCCC - Initial Selection -> Status | Error
+    //        2h       Chaining -> H - Accept Status     -> Ack | Error
+    // ...0   3h                     - Stack Status      -> Ack | Error
+    // ...1   3h                     - Suppress Status   -> Ack | Error
+    //        4h                     - Accept Data       -> Ack | Error
+    //        5h                     - Stop              -> Ack | Error
+    //        7h AAAA AAAA DDDD DDDD - Send Data         -> Ack | Status | Error
+    //        8h AAAA AAAA           - Selective Reset   -> Ack | Error
     input wire [23:0] in_tdata,
     input wire in_tvalid,
     output reg in_tready,
@@ -84,10 +84,11 @@ module channel_out_protocol (
     parameter CLOCKS_PER_100_NS = 5; // 50 MHz clock period is 20 ns
     parameter SYSTEM_RESET_DURATION_100_NS = 60; // 6 μs is 6000 ns, reduce this for tests
 
-    localparam ERROR_INVALID_COMMAND = 8'h01;
+    localparam ERROR_INVALID_IN = 8'h01;
 
     localparam STATE_SYSTEM_RESET = 0;
-    localparam STATE_IDLE = 1;
+    localparam STATE_READY = 1;
+    localparam STATE_WAIT = 2;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
@@ -121,9 +122,9 @@ reg device_selected;
     begin
         next_state = state;
 
-        next_in_tready = 0; // ???
+        next_in_tready = 0;
         next_out_tdata = out_tdata;
-        next_out_tvalid = out_tvalid;
+        next_out_tvalid = 0;
 
         next_bus_out = a_bus_out; // ???
         next_operational_out = 0;
@@ -141,16 +142,15 @@ reg device_selected;
                 // out' are down concurrently for at least 6 microseconds.
                 if (state_timer == CLOCKS_PER_100_NS * SYSTEM_RESET_DURATION_100_NS)
                 begin
-                    next_state = STATE_IDLE;
+                    next_state = STATE_READY;
                 end
             end
 
-            STATE_IDLE:
+            STATE_READY:
             begin
-                next_operational_out = 1;
+                next_in_tready = 1;
 
-                // We are ready to accept something if there is no output pending.
-                next_in_tready = ~out_tvalid;
+                next_operational_out = 1;
 
                 // Leave bus out low when idle to reduce driver current.
                 //
@@ -160,16 +160,28 @@ reg device_selected;
 
                 if (in_tready && in_tvalid)
                 begin
-                    next_out_tdata = error_tdata(ERROR_INVALID_COMMAND);
+                    next_in_tready = 0;
 
-                    // This will cause input ready to go low on next clock.
+                    // ...
+
+                    next_out_tdata = error_tdata(ERROR_INVALID_IN);
                     next_out_tvalid = 1;
+
+                    next_state = STATE_WAIT;
                 end
+            end
+
+            STATE_WAIT:
+            begin
+                next_out_tvalid = 1;
+
+                next_operational_out = 1;
 
                 if (out_tready && out_tvalid)
                 begin
-                    // Our output has been accepted.
                     next_out_tvalid = 0;
+
+                    next_state = STATE_READY;
                 end
             end
         endcase

@@ -130,6 +130,7 @@ module channel_out_protocol_tb;
         $dumpvars(0, channel_out_protocol_tb);
 
         test_system_reset;
+        test_invalid_in;
 
         /*
         test_no_cu;
@@ -155,7 +156,7 @@ module channel_out_protocol_tb;
         // Initial, untimed reset...
         @(posedge clk)
         begin
-            protocol_reset <= 0;
+            protocol_reset = 0;
         end
 
         @(posedge operational_out);
@@ -163,12 +164,12 @@ module channel_out_protocol_tb;
         // Timed reset...
         @(posedge clk)
         begin
-            protocol_reset <= 1;
+            protocol_reset = 1;
         end
 
         @(posedge clk)
         begin
-            protocol_reset <= 0;
+            protocol_reset = 0;
         end
 
         @(negedge operational_out)
@@ -198,6 +199,64 @@ module channel_out_protocol_tb;
         `assert_high(protocol.in_tready, "in should be TREADY");
 
         $display("END: test_system_reset");
+    end
+    endtask
+
+    task test_invalid_in;
+        reg [23:0] out;
+    begin
+        $display("START: test_invalid_in");
+
+        @(posedge clk);
+
+        exec({ 8'h00, 8'h00, 8'h00 }, out);
+
+        `assert_equal(out, { 8'hff, 8'h01, 8'h00 }, "out should be invalid in error");
+
+        $display("END: test_invalid_in");
+    end
+    endtask
+
+    task exec (
+        input [23:0] in,
+        output [23:0] out
+    );
+    begin
+        @(posedge clk)
+        begin
+            protocol_in_tdata = in;
+            protocol_in_tvalid = 1;
+
+            protocol_out_tready = 1;
+        end
+
+        while (protocol_in_tvalid)
+        begin
+            @(posedge clk)
+            begin
+                if (protocol.in_tready)
+                begin
+                    $display("Request: %h", in);
+
+                    protocol_in_tvalid = 0;
+                end
+            end
+        end
+
+        while (protocol_out_tready)
+        begin
+            @(posedge clk)
+            begin
+                if (protocol.out_tvalid)
+                begin
+                    out = protocol.out_tdata;
+
+                    $display("Response: %h", out);
+
+                    protocol_out_tready = 0;
+                end
+            end
+        end
     end
     endtask
 
