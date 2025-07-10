@@ -132,10 +132,10 @@ module channel_out_protocol_tb;
         test_system_reset;
         test_invalid_in;
         test_initial_selection_address_not_operational;
+        // test_initial_selection_busy;
+        test_initial_selection_short_busy;
 
         /*
-        test_busy;
-        test_short_busy;
         test_read_command_cu_more;
         test_read_command_cu_less;
         test_write_command_cu_more;
@@ -223,9 +223,29 @@ module channel_out_protocol_tb;
 
         `assert_equal(out[23:8], { 8'hff, 8'h02 }, "out should be address not operational error");
 
+        $display("END: test_initial_selection_address_not_operational");
+    end
+    endtask
+
+    // test_initial_selection_busy
+
+    task test_initial_selection_short_busy;
+        reg [23:0] out;
+    begin
+        $display("START: test_initial_selection_short_busy");
+
+        reset;
+
+        cu_mock_busy = 0;
+        cu_mock_short_busy = 1;
+
+        exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
+
+        `assert_equal(out[23:8], { 8'h01, 8'h10 }, "out should be BUSY status");
+
         #50;
 
-        $display("END: test_initial_selection_address_not_operational");
+        $display("END: test_initial_selection_short_busy");
     end
     endtask
 

@@ -20,7 +20,6 @@
 // This module supports multi-plexing (TODO: what is the definition of this,
 // multiple devices SELECTED? or multiple devices ACTIVE etc.) by reselecting
 // devices but this module does not maintain the state of multiple devices.
-
 module channel_out_protocol (
     input wire clk,
     input wire reset,
@@ -50,11 +49,8 @@ module channel_out_protocol (
     output reg in_tready,
 
     //      0000                     - Ack ("null")
-    //                                  -> is this really needed?
-    //                                  -> can it be inferred?
-    //                                  -> probably easier just to include it though
-    //      xxxx AAAA AAAA SSSS SSSS - Status
-    //      xxxx AAAA AAAA DDDD DDDD - Data
+    //        1h AAAA AAAA SSSS SSSS - Status
+    //        2h AAAA AAAA DDDD DDDD - Data
     // 1111 1111 EEEE EEEE           - Error
     output reg [23:0] out_tdata,
     output reg out_tvalid,
@@ -92,6 +88,7 @@ module channel_out_protocol (
 
     localparam ERROR_INVALID_IN = 8'h01;
     localparam ERROR_ADDRESS_NOT_OPERATIONAL = 8'h02;
+    localparam ERROR_INVALID_SHORT_BUSY_STATUS = 8'h03;
     localparam ERROR_TIMEOUT = 8'hff;
 
     localparam STATE_SYSTEM_RESET = 0;
@@ -101,6 +98,7 @@ module channel_out_protocol (
     localparam STATE_INITIAL_SELECTION_2 = 4;
     localparam STATE_INITIAL_SELECTION_3 = 5;
     localparam STATE_INITIAL_SELECTION_4 = 6;
+    localparam STATE_INITIAL_SELECTION_5 = 7;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
@@ -167,8 +165,8 @@ module channel_out_protocol (
         case (state)
             STATE_SYSTEM_RESET:
             begin
-                // SPEC: To ensure a proper reset, 'operational out' and 'suppress out' are
-                // down concurrently for at least 6 microseconds.
+                // SPEC: To ensure a proper reset, 'operational out' and 'suppress
+                // out' are down concurrently for at least 6 microseconds.
                 if (state_timer == SYSTEM_RESET_DURATION_100_NS * CLOCKS_PER_100_NS)
                 begin
                     next_state = STATE_READY;
@@ -202,7 +200,7 @@ module channel_out_protocol (
 
                         default:
                         begin
-                            next_out_tdata = error_tdata(ERROR_INVALID_IN);
+                            next_out_tdata = out_error(ERROR_INVALID_IN);
                             next_out_tvalid = 1;
 
                             next_state = STATE_WAIT;
@@ -230,10 +228,11 @@ module channel_out_protocol (
                 next_bus_out = address;
                 next_operational_out = 1;
 
-                // SPEC: 'Address out' rises at least 250 nanoseconds after the I/O-device
-                // address is placed on 'bus out' or at least 250 nanoseconds after the rise
-                // of 'operational out', whichever occurs later. 'Address out' is down for at
-                // least 250 nanoseconds before its rise for I/O-device selection.
+                // SPEC: 'Address out' rises at least 250 nanoseconds after the
+                // I/O-device address is placed on 'bus out' or at least 250
+                // nanoseconds after the rise of 'operational out', whichever
+                // occurs later. 'Address out' is down for at least 250 nanoseconds
+                // before its rise for I/O-device selection.
                 if (state_timer == ADDRESS_BUS_OUT_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
                 begin
                     next_state = STATE_INITIAL_SELECTION_2;
@@ -245,18 +244,19 @@ module channel_out_protocol (
                 next_bus_out = address;
                 next_operational_out = 1;
 
-                // SPEC: Address out' can rise for device selection only when 'select out'
-                // (or 'hold out'), 'select in', 'status in', and 'operational in' are down
-                // at the channel.
+                // SPEC: Address out' can rise for device selection only when
+                // 'select out' (or 'hold out'), 'select in', 'status in', and
+                // 'operational in' are down at the channel.
                 //
-                // SPEC: To prevent overlapping of interface sequences [...]: 'Select out' is
-                // not raised until all inbound signals for the preceding sequence are in a
-                // down state.
+                // SPEC: To prevent overlapping of interface sequences [...]:
+                // 'Select out' is not raised until all inbound signals for the
+                // preceding sequence are in a down state.
                 //
-                // SPEC: Once 'hold out' drops, it does not rise for at least 4 microseconds
-                // in general system configurations. The minimum downtime of this signal may
-                // be optionally adjusted at installation time to a minimum of 2 microseconds
-                // to handle high-speed channel configurations.
+                // SPEC: Once 'hold out' drops, it does not rise for at least 4
+                // microseconds in general system configurations. The minimum
+                // downtime of this signal may be optionally adjusted at
+                // installation time to a minimum of 2 microseconds to handle
+                // high-speed channel configurations.
                 if (!a_operational_in && !a_status_in && !a_service_in && hold_out_delay == 0)
                 begin
                     next_state = STATE_INITIAL_SELECTION_3;
@@ -271,20 +271,59 @@ module channel_out_protocol (
                 next_select_out = 1;
                 next_address_out = 1;
 
-                if (a_operational_in)
+                if (a_status_in)
+                begin
+                    next_state = STATE_INITIAL_SELECTION_4;
+                end
+                else if (a_operational_in)
                 begin
                     // ...
                 end
                 else if (a_select_in)
                 begin
-                    next_out_tdata = error_tdata(ERROR_ADDRESS_NOT_OPERATIONAL);
+                    next_out_tdata = out_error(ERROR_ADDRESS_NOT_OPERATIONAL);
                     next_out_tvalid = 1;
 
                     next_state = STATE_WAIT;
                 end
                 else if (state_timer == SELECT_OUT_IN_TIMEOUT_100_NS * CLOCKS_PER_100_NS)
                 begin
-                    next_out_tdata = error_tdata(ERROR_TIMEOUT);
+                    next_out_tdata = out_error(ERROR_TIMEOUT);
+                    next_out_tvalid = 1;
+
+                    next_state = STATE_WAIT;
+                end
+            end
+
+            STATE_INITIAL_SELECTION_4:
+            begin
+                next_operational_out = 1;
+                next_address_out = 1;
+
+                // SPEC: During execution of the short-busy sequence, the control
+                // unit presents status of either (1) busy and status modifier,
+                // (2) busy, status modifier, and control-unit end, or (3) busy.
+                // Presentation of any other status condition by the control unit
+                // or device may cause an error condition to be recognized.
+                if (a_bus_in[4])
+                begin
+                    next_out_tdata = out_status(a_bus_in);
+                end
+                else
+                begin
+                    next_out_tdata = out_error(ERROR_INVALID_SHORT_BUSY_STATUS);
+                end
+
+                next_state = STATE_INITIAL_SELECTION_5;
+            end
+
+            STATE_INITIAL_SELECTION_5:
+            begin
+                next_operational_out = 1;
+                next_address_out = 1;
+
+                if (!a_status_in)
+                begin
                     next_out_tvalid = 1;
 
                     next_state = STATE_WAIT;
@@ -333,11 +372,19 @@ module channel_out_protocol (
 
     assign request = a_request_in;
 
-    function [23:0] error_tdata (
+    function [23:0] out_error (
         input [7:0] code
     );
     begin
-        error_tdata = { 8'hff, code, state };
+        out_error = { 8'hff, code, state };
+    end
+    endfunction
+
+    function [23:0] out_status (
+        input [7:0] status
+    );
+    begin
+        out_status = { 8'h01, status, 8'h00 };
     end
     endfunction
 endmodule
