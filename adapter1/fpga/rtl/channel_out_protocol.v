@@ -81,6 +81,7 @@ module channel_out_protocol (
     parameter CLOCKS_PER_100_NS = 5; // 50 MHz clock period is 20 ns
 
     parameter SYSTEM_RESET_DURATION_100_NS = 60; // 6 μs, reduce this for tests
+    parameter BUS_IN_SKEW_DELAY_100_NS = 1; // 100 ns
     parameter BUS_OUT_SKEW_DELAY_100_NS = 1; // 100 ns
     parameter ADDRESS_BUS_OUT_SKEW_DELAY_100_NS = 3; // 250 ns
     parameter ADDRESS_OUT_SELECT_OUT_DELAY_100_NS = 4; // 400 ns
@@ -101,6 +102,7 @@ module channel_out_protocol (
     localparam STATE_INITIAL_SELECTION_3 = 5;
     localparam STATE_INITIAL_SELECTION_4 = 6;
     localparam STATE_INITIAL_SELECTION_5 = 7;
+    localparam STATE_INITIAL_SELECTION_4A = 13;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
@@ -291,7 +293,7 @@ module channel_out_protocol (
 
                 if (a_status_in)
                 begin
-                    next_state = STATE_INITIAL_SELECTION_4;
+                    next_state = STATE_INITIAL_SELECTION_4A;
                 end
                 else if (a_operational_in)
                 begin
@@ -313,9 +315,24 @@ module channel_out_protocol (
                 end
             end
 
+            STATE_INITIAL_SELECTION_4A:
+            begin
+                next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+                next_address_out = 1;
+
+                if (state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
+                begin
+                    next_state = STATE_INITIAL_SELECTION_4;
+                end
+            end
+
             STATE_INITIAL_SELECTION_4:
             begin
                 next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
                 next_address_out = 1;
 
                 // SPEC: During execution of the short-busy sequence, the control
