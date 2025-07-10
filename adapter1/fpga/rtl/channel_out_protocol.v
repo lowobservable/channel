@@ -83,15 +83,24 @@ module channel_out_protocol (
     output reg a_suppress_out
 );
     parameter CLOCKS_PER_100_NS = 5; // 50 MHz clock period is 20 ns
-    parameter SYSTEM_RESET_DURATION_100_NS = 60; // 6 μs is 6000 ns, reduce this for tests
+
+    parameter SYSTEM_RESET_DURATION_100_NS = 60; // 6 μs, reduce this for tests
+    parameter BUS_OUT_SKEW_DELAY_100_NS = 1; // 100 ns
+    parameter ADDRESS_BUS_OUT_SKEW_DELAY_100_NS = 3; // 250 ns
+    parameter HOLD_OUT_DELAY_100_NS = 40; // 4 μs, reduce this for tests
+    parameter SELECT_OUT_IN_TIMEOUT_100_NS = 144; // 14.4 μs
 
     localparam ERROR_INVALID_IN = 8'h01;
     localparam ERROR_ADDRESS_NOT_OPERATIONAL = 8'h02;
+    localparam ERROR_TIMEOUT = 8'hff;
 
     localparam STATE_SYSTEM_RESET = 0;
     localparam STATE_READY = 1;
     localparam STATE_WAIT = 2;
     localparam STATE_INITIAL_SELECTION_1 = 3;
+    localparam STATE_INITIAL_SELECTION_2 = 4;
+    localparam STATE_INITIAL_SELECTION_3 = 5;
+    localparam STATE_INITIAL_SELECTION_4 = 6;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
@@ -121,6 +130,20 @@ module channel_out_protocol (
     reg next_service_out;
     reg next_suppress_out;
 
+    reg [7:0] hold_out_delay = 0;
+
+    always @(posedge clk)
+    begin
+        if (a_hold_out)
+        begin
+            hold_out_delay = HOLD_OUT_DELAY_100_NS * CLOCKS_PER_100_NS;
+        end
+        else if (hold_out_delay > 0)
+        begin
+            hold_out_delay = hold_out_delay - 1;
+        end
+    end
+
     always @(*)
     begin
         next_state = state;
@@ -144,9 +167,9 @@ module channel_out_protocol (
         case (state)
             STATE_SYSTEM_RESET:
             begin
-                // SPEC: To ensure a proper reset, 'operational out' and 'suppress
-                // out' are down concurrently for at least 6 microseconds.
-                if (state_timer == CLOCKS_PER_100_NS * SYSTEM_RESET_DURATION_100_NS)
+                // SPEC: To ensure a proper reset, 'operational out' and 'suppress out' are
+                // down concurrently for at least 6 microseconds.
+                if (state_timer == SYSTEM_RESET_DURATION_100_NS * CLOCKS_PER_100_NS)
                 begin
                     next_state = STATE_READY;
                 end
@@ -204,12 +227,68 @@ module channel_out_protocol (
 
             STATE_INITIAL_SELECTION_1:
             begin
+                next_bus_out = address;
                 next_operational_out = 1;
 
-                next_out_tdata = error_tdata(ERROR_ADDRESS_NOT_OPERATIONAL);
-                next_out_tvalid = 1;
+                // SPEC: 'Address out' rises at least 250 nanoseconds after the I/O-device
+                // address is placed on 'bus out' or at least 250 nanoseconds after the rise
+                // of 'operational out', whichever occurs later. 'Address out' is down for at
+                // least 250 nanoseconds before its rise for I/O-device selection.
+                if (state_timer == ADDRESS_BUS_OUT_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
+                begin
+                    next_state = STATE_INITIAL_SELECTION_2;
+                end
+            end
 
-                next_state = STATE_WAIT;
+            STATE_INITIAL_SELECTION_2:
+            begin
+                next_bus_out = address;
+                next_operational_out = 1;
+
+                // SPEC: Address out' can rise for device selection only when 'select out'
+                // (or 'hold out'), 'select in', 'status in', and 'operational in' are down
+                // at the channel.
+                //
+                // SPEC: To prevent overlapping of interface sequences [...]: 'Select out' is
+                // not raised until all inbound signals for the preceding sequence are in a
+                // down state.
+                //
+                // SPEC: Once 'hold out' drops, it does not rise for at least 4 microseconds
+                // in general system configurations. The minimum downtime of this signal may
+                // be optionally adjusted at installation time to a minimum of 2 microseconds
+                // to handle high-speed channel configurations.
+                if (!a_operational_in && !a_status_in && !a_service_in && hold_out_delay == 0)
+                begin
+                    next_state = STATE_INITIAL_SELECTION_3;
+                end
+            end
+
+            STATE_INITIAL_SELECTION_3:
+            begin
+                next_bus_out = address;
+                next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+                next_address_out = 1;
+
+                if (a_operational_in)
+                begin
+                    // ...
+                end
+                else if (a_select_in)
+                begin
+                    next_out_tdata = error_tdata(ERROR_ADDRESS_NOT_OPERATIONAL);
+                    next_out_tvalid = 1;
+
+                    next_state = STATE_WAIT;
+                end
+                else if (state_timer == SELECT_OUT_IN_TIMEOUT_100_NS * CLOCKS_PER_100_NS)
+                begin
+                    next_out_tdata = error_tdata(ERROR_TIMEOUT);
+                    next_out_tvalid = 1;
+
+                    next_state = STATE_WAIT;
+                end
             end
         endcase
     end
@@ -258,7 +337,7 @@ module channel_out_protocol (
         input [7:0] code
     );
     begin
-        error_tdata = { 8'hff, code, 8'h00 };
+        error_tdata = { 8'hff, code, state };
     end
     endfunction
 endmodule

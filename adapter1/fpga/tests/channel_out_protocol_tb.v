@@ -134,7 +134,6 @@ module channel_out_protocol_tb;
         test_initial_selection_address_not_operational;
 
         /*
-        test_no_cu;
         test_busy;
         test_short_busy;
         test_read_command_cu_more;
@@ -155,12 +154,7 @@ module channel_out_protocol_tb;
         $display("START: test_system_reset");
 
         // Initial, untimed reset...
-        @(posedge clk)
-        begin
-            protocol_reset = 0;
-        end
-
-        @(posedge operational_out);
+        reset;
 
         // Timed reset...
         @(posedge clk)
@@ -208,11 +202,11 @@ module channel_out_protocol_tb;
     begin
         $display("START: test_invalid_in");
 
-        @(posedge clk);
+        reset;
 
         exec({ 8'h00, 8'h00, 8'h00 }, out); // Invalid
 
-        `assert_equal(out, { 8'hff, 8'h01, 8'h00 }, "out should be invalid in error");
+        `assert_equal(out[23:8], { 8'hff, 8'h01 }, "out should be invalid in error");
 
         $display("END: test_invalid_in");
     end
@@ -223,13 +217,31 @@ module channel_out_protocol_tb;
     begin
         $display("START: test_initial_selection_address_not_operational");
 
-        @(posedge clk);
+        reset;
 
         exec({ 8'h11, 8'h1b, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out, { 8'hff, 8'h02, 8'h00 }, "out should be address not operational error");
+        `assert_equal(out[23:8], { 8'hff, 8'h02 }, "out should be address not operational error");
+
+        #50;
 
         $display("END: test_initial_selection_address_not_operational");
+    end
+    endtask
+
+    task reset;
+    begin
+        @(posedge clk)
+        begin
+            protocol_reset = 1;
+        end
+
+        @(posedge clk)
+        begin
+            protocol_reset = 0;
+        end
+
+        @(posedge operational_out);
     end
     endtask
 
@@ -277,29 +289,6 @@ module channel_out_protocol_tb;
     endtask
 
     /*
-    task test_no_cu;
-    begin
-        $display("START: test_no_cu");
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        #3;
-
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 0;
-
-        start_channel(8'h10, 8'h02, 6); // READ
-
-        #200;
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        `assert_equal(channel_condition_code, 3, "condition code should be not operational");
-
-        $display("END: test_no_cu");
-    end
-    endtask
-
     task test_busy;
     begin
         $display("START: test_busy");
