@@ -83,6 +83,7 @@ module channel_out_protocol (
     parameter SYSTEM_RESET_DURATION_100_NS = 60; // 6 μs, reduce this for tests
     parameter BUS_OUT_SKEW_DELAY_100_NS = 1; // 100 ns
     parameter ADDRESS_BUS_OUT_SKEW_DELAY_100_NS = 3; // 250 ns
+    parameter ADDRESS_OUT_SELECT_OUT_DELAY_100_NS = 4; // 400 ns
     parameter HOLD_OUT_DELAY_100_NS = 40; // 4 μs, reduce this for tests
     parameter SELECT_OUT_IN_TIMEOUT_100_NS = 144; // 14.4 μs
 
@@ -96,6 +97,7 @@ module channel_out_protocol (
     localparam STATE_WAIT = 2;
     localparam STATE_INITIAL_SELECTION_1 = 3;
     localparam STATE_INITIAL_SELECTION_2 = 4;
+    localparam STATE_INITIAL_SELECTION_2A = 10;
     localparam STATE_INITIAL_SELECTION_3 = 5;
     localparam STATE_INITIAL_SELECTION_4 = 6;
     localparam STATE_INITIAL_SELECTION_5 = 7;
@@ -258,6 +260,22 @@ module channel_out_protocol (
                 // installation time to a minimum of 2 microseconds to handle
                 // high-speed channel configurations.
                 if (!a_operational_in && !a_status_in && !a_service_in && hold_out_delay == 0)
+                begin
+                    next_state = STATE_INITIAL_SELECTION_2A;
+                end
+            end
+
+            STATE_INITIAL_SELECTION_2A:
+            begin
+                next_bus_out = address;
+                next_operational_out = 1;
+                next_address_out = 1;
+
+                // SPEC: When an operation is being initiated by the channel,
+                // 'select out' is raised not less than 400 nanoseconds after
+                // the rise of 'address out', which indicates the address of
+                // the device being selected.
+                if (state_timer == ADDRESS_OUT_SELECT_OUT_DELAY_100_NS * CLOCKS_PER_100_NS)
                 begin
                     next_state = STATE_INITIAL_SELECTION_3;
                 end
