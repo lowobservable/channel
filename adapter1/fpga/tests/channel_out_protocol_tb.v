@@ -45,6 +45,8 @@ module channel_out_protocol_tb;
         .out_tvalid(),
         .out_tready(protocol_out_tready),
 
+        .channel_burst(1'b1), // Selector channel behavior
+
         .a_bus_in(bus_in),
         .a_bus_in_parity(bus_in_parity),
         .a_bus_out(bus_out),
@@ -132,7 +134,7 @@ module channel_out_protocol_tb;
         test_system_reset;
         test_invalid_in;
         test_initial_selection_address_not_operational;
-        // test_initial_selection_busy;
+        test_initial_selection_busy;
         test_initial_selection_short_busy;
 
         /*
@@ -227,7 +229,23 @@ module channel_out_protocol_tb;
     end
     endtask
 
-    // test_initial_selection_busy
+    task test_initial_selection_busy;
+        reg [23:0] out;
+    begin
+        $display("START: test_initial_selection_busy");
+
+        reset;
+
+        cu_mock_busy = 1;
+        cu_mock_short_busy = 0;
+
+        exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
+
+        `assert_equal(out, { 8'h01, 8'h1a, 8'h10 }, "out should be BUSY status");
+
+        $display("END: test_initial_selection_busy");
+    end
+    endtask
 
     task test_initial_selection_short_busy;
         reg [23:0] out;
@@ -241,9 +259,7 @@ module channel_out_protocol_tb;
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out[23:8], { 8'h01, 8'h10 }, "out should be BUSY status");
-
-        #50;
+        `assert_equal(out, { 8'h01, 8'h1a, 8'h10 }, "out should be BUSY status");
 
         $display("END: test_initial_selection_short_busy");
     end

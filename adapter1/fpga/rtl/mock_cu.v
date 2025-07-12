@@ -424,6 +424,13 @@ module mock_cu (
         else
         begin
             state <= 0;
+
+            request_in <= 0;
+            operational_in <= 0;
+            address_in <= 0;
+            status_in <= 0;
+            service_in <= 0;
+            selection_y <= 0;
         end
 
         if (reset)
