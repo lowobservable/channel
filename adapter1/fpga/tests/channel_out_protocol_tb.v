@@ -136,6 +136,7 @@ module channel_out_protocol_tb;
         test_initial_selection_address_not_operational;
         test_initial_selection_busy;
         test_initial_selection_short_busy;
+        test_read_channel_stop;
 
         /*
         test_read_command_cu_more;
@@ -208,7 +209,8 @@ module channel_out_protocol_tb;
 
         exec({ 8'h00, 8'h00, 8'h00 }, out); // Invalid
 
-        `assert_equal(out[23:8], { 8'hff, 8'h01 }, "out should be invalid in error");
+        `assert_equal(out[23:8], { 8'hff, 8'h01 }, "response should be invalid in error");
+        `assert_low(protocol.selected, "selected should be LOW");
 
         $display("END: test_invalid_in");
     end
@@ -223,7 +225,8 @@ module channel_out_protocol_tb;
 
         exec({ 8'h11, 8'h1b, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out[23:8], { 8'hff, 8'h02 }, "out should be address not operational error");
+        `assert_equal(out[23:8], { 8'hff, 8'h02 }, "response should be address not operational error");
+        `assert_low(protocol.selected, "selected should be LOW");
 
         $display("END: test_initial_selection_address_not_operational");
     end
@@ -241,7 +244,10 @@ module channel_out_protocol_tb;
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out, { 8'h01, 8'h1a, 8'h10 }, "out should be BUSY status");
+        `assert_equal(out, { 8'h01, 8'h1a, 8'h10 }, "response should be BUSY status");
+        `assert_low(protocol.selected, "selected should be LOW");
+
+        #100;
 
         $display("END: test_initial_selection_busy");
     end
@@ -259,9 +265,51 @@ module channel_out_protocol_tb;
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out, { 8'h01, 8'h1a, 8'h10 }, "out should be BUSY status");
+        `assert_equal(out, { 8'h01, 8'h1a, 8'h10 }, "response should be BUSY status");
+        `assert_low(protocol.selected, "selected should be LOW");
 
         $display("END: test_initial_selection_short_busy");
+    end
+    endtask
+
+    task test_read_channel_stop;
+        reg [23:0] out;
+        reg [7:0] byte;
+    begin
+        $display("START: test_read_channel_stop");
+
+        reset;
+
+        cu_mock_busy = 0;
+        cu_mock_short_busy = 0;
+        cu_mock_limit = 16; // CU can provide 16 bytes
+
+        exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
+
+        `assert_equal(out, { 8'h01, 8'h1a, 8'h00 }, "response should be accepted status");
+        `assert_high(protocol.selected, "selected should be HIGH");
+
+        for (byte = 1; byte <= 7; byte = byte + 1)
+        begin
+            wait_event(out);
+
+            `assert_equal(out, { 8'h82, 8'h1a, byte }, "event should be data transfer with correct byte and valid parity");
+
+            if (byte == 7)
+            begin
+                exec({ 8'h06, 16'h00 }, out); // Stop
+            end
+            else
+            begin
+                exec({ 8'h05, 16'h00 }, out); // Accept Data
+            end
+
+            `assert_equal(out, 24'h00, "response should be acknowledgement");
+        end
+
+        `assert_equal(cu.count, 6, "count should be 6");
+
+        $display("END: test_read_channel_stop");
     end
     endtask
 
@@ -324,77 +372,33 @@ module channel_out_protocol_tb;
     end
     endtask
 
+    task wait_event (
+        output [23:0] out
+    );
+    begin
+        @(posedge clk)
+        begin
+            protocol_out_tready = 1;
+        end
+
+        while (protocol_out_tready)
+        begin
+            @(posedge clk)
+            begin
+                if (protocol.out_tvalid)
+                begin
+                    out = protocol.out_tdata;
+
+                    $display("Event: %h", out);
+
+                    protocol_out_tready = 0;
+                end
+            end
+        end
+    end
+    endtask
+
     /*
-    task test_busy;
-    begin
-        $display("START: test_busy");
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        #3;
-
-        cu_mock_busy = 1;
-        cu_mock_short_busy = 0;
-
-        start_channel(8'h1a, 8'h02, 6); // READ
-
-        #200;
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        `assert_equal(channel_status, 8'h10, "status should be BUSY");
-
-        $display("END: test_busy");
-    end
-    endtask
-
-    task test_short_busy;
-    begin
-        $display("START: test_short_busy");
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        #3;
-
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 1;
-
-        start_channel(8'h1a, 8'h02, 6); // READ
-
-        #200;
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        `assert_equal(channel_status, 8'h10, "status should be BUSY");
-
-        $display("END: test_short_busy");
-    end
-    endtask
-
-    task test_read_command_cu_more;
-    begin
-        $display("START: test_read_command_cu_more");
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        #3;
-
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 0;
-        cu_mock_limit = 16; // CU can provide 16 bytes
-
-        start_channel(8'h1a, 8'h02, 6); // READ
-
-        #600;
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        `assert_equal(channel_count, 0, "count should be 0")
-
-        $display("END: test_read_command_cu_more");
-    end
-    endtask
-
     task test_read_command_cu_less;
     begin
         $display("START: test_read_command_cu_less");

@@ -16,38 +16,33 @@
 
 // The channel out protocol module translates the parallel channel sequences
 // to the bus and tag signals.
-//
-// This module supports multiplexing by reselecting devices but this module
-// does not maintain the state of multiple devices.
 module channel_out_protocol (
     input wire clk,
     input wire reset,
 
-    // A connection begins at the time 'select out' rises at the control unit
-    // for the purpose of executing any sequence or sequences The connection
-    // is considered to be ended when 'operational in' is dropped.
-    //output reg connected,
-
     // 2222 1111 1111 11
     // 3210 9876 5432 1098 7654 3210
     // ---- ---- ---- ---- ---- ----
-    // ...0   1h 0000 0000 0000 0000 - Select Requestor  -> Status | Data | Error
+    // ...0   1h 0000 0000 0000 0000 - Select Requestor  -> Status | Service | Error
     // ...1   1h AAAA AAAA CCCC CCCC - Initial Selection -> Status | Error
+    //
     //        2h       Chaining -> H - Accept Status     -> Ack | Error
     // ...0   3h                     - Stack Status      -> Ack | Error
     // ...1   3h                     - Suppress Status   -> Ack | Error
-    //        4h                     - Accept Data       -> Ack | Error
-    //        5h                     - Stop              -> Ack | Error
-    //                                 ??? receive
-    //        7h AAAA AAAA DDDD DDDD - Send Data         -> Ack | Status | Error
-    //        8h AAAA AAAA           - Selective Reset   -> Ack | Error
+    //
+    //        4h DDDD DDDD           - Send Data
+    //        5h                     - Accept Data
+    //        6h                     - Stop              -> Ack | Error
+    //                               - Interface Disconnect
+    //
+    //        fh AAAA AAAA           - Selective Reset   -> Ack | Error
     input wire [23:0] in_tdata,
     input wire in_tvalid,
     output reg in_tready,
 
     // 0000 0000                     - Ack ("null")
     //        1h AAAA AAAA SSSS SSSS - Status
-    // P      2h AAAA AAAA DDDD DDDD - Data
+    // P      2h AAAA AAAA DDDD DDDD - Service
     // ^-- Parity valid
     // 1111 1111 EEEE EEEE DDDD DDDD - Error
     output reg [23:0] out_tdata,
@@ -55,7 +50,7 @@ module channel_out_protocol (
     input wire out_tready,
 
     output wire request,
-
+    output reg selected,
     input wire channel_burst,
 
     // Parallel Channel "A"...
@@ -97,36 +92,47 @@ module channel_out_protocol (
     localparam ERROR_TIMEOUT = 8'hff;
 
     localparam STATE_SYSTEM_RESET = 0;
-    localparam STATE_READY = 1;
-    localparam STATE_WAIT = 2;
-    localparam STATE_INITIAL_SELECTION_1 = 3;
-    localparam STATE_INITIAL_SELECTION_2 = 4;
-    localparam STATE_INITIAL_SELECTION_3 = 5;
-    localparam STATE_INITIAL_SELECTION_4 = 6;
-    localparam STATE_INITIAL_SELECTION_5 = 7;
-    localparam STATE_INITIAL_SELECTION_6 = 8;
-    localparam STATE_INITIAL_SELECTION_7 = 9;
-    localparam STATE_INITIAL_SELECTION_8 = 10;
-    localparam STATE_INITIAL_SELECTION_9 = 11;
-    localparam STATE_INITIAL_SELECTION_10 = 12;
-    localparam STATE_INITIAL_SELECTION_11 = 13;
-    localparam STATE_INITIAL_SELECTION_12 = 14;
-    localparam STATE_INITIAL_SELECTION_13 = 15;
-    localparam STATE_INITIAL_SELECTION_14 = 16;
-    localparam STATE_INITIAL_SELECTION_15 = 17;
+    localparam STATE_IDLE = 1;
+    localparam STATE_SELECTED = 2;
+    localparam STATE_WAIT = 3;
+    localparam STATE_INITIAL_SELECTION_1 = 4;
+    localparam STATE_INITIAL_SELECTION_2 = 5;
+    localparam STATE_INITIAL_SELECTION_3 = 6;
+    localparam STATE_INITIAL_SELECTION_4 = 7;
+    localparam STATE_INITIAL_SELECTION_5 = 8;
+    localparam STATE_INITIAL_SELECTION_6 = 9;
+    localparam STATE_INITIAL_SELECTION_7 = 10;
+    localparam STATE_INITIAL_SELECTION_8 = 11;
+    localparam STATE_INITIAL_SELECTION_9 = 12;
+    localparam STATE_INITIAL_SELECTION_10 = 13;
+    localparam STATE_INITIAL_SELECTION_11 = 14;
+    localparam STATE_INITIAL_SELECTION_12 = 15;
+    localparam STATE_INITIAL_SELECTION_13 = 16;
+    localparam STATE_INITIAL_SELECTION_14 = 17;
+    localparam STATE_INITIAL_SELECTION_15 = 18;
+    localparam STATE_INITIAL_SELECTION_16 = 19;
+    localparam STATE_DATA_TRANSFER_1 = 20;
+    localparam STATE_DATA_TRANSFER_2 = 21;
+    localparam STATE_DATA_TRANSFER_3 = 22;
+    localparam STATE_DATA_TRANSFER_4 = 23;
+    localparam STATE_DATA_TRANSFER_5 = 24;
+    localparam STATE_DATA_TRANSFER_6 = 25;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
     reg [15:0] state_timer = 0;
 
+    reg next_in_tready = 0;
+    reg [23:0] next_out_tdata;
+    reg next_out_tvalid = 0;
+
     reg [7:0] address;
     reg [7:0] next_address;
     reg [7:0] command;
     reg [7:0] next_command;
-
-    reg next_in_tready = 0;
-    reg [23:0] next_out_tdata;
-    reg next_out_tvalid = 0;
+    reg [7:0] status;
+    reg [7:0] next_status;
+    reg next_selected;
 
     wire bus_in_parity_valid;
 
@@ -155,16 +161,53 @@ module channel_out_protocol (
         end
     end
 
+    // vvv
+    reg operational_in_violation;
+    reg [7:0] prev_operational_in;
+
+    always @(posedge clk)
+    begin
+        operational_in_violation <= 0;
+
+        // TODO: operational in can't just go up and down!!!
+
+        // SPEC: 'Operational in' rises only when the incoming 'select out'
+        // to the control unit is up.
+        //
+        // SPEC: Operational in' drops only after 'select out' drops.
+        if (a_operational_in && !prev_operational_in)
+        begin
+            if (!a_select_out)
+            begin
+                $display("TODO: Operational in violation 1");
+            end
+        end
+        else if (!a_operational_in && prev_operational_in)
+        begin
+            if (a_select_out)
+            begin
+                $display("TODO: Operational in violation 2");
+            end
+        end
+
+        prev_operational_in <= a_operational_in;
+    end
+    // ^^^
+
+    assign request = a_request_in;
+
     always @(*)
     begin
         next_state = state;
 
-        next_address = address;
-        next_command = command;
-
         next_in_tready = 0;
         next_out_tdata = out_tdata;
         next_out_tvalid = 0;
+
+        next_address = address;
+        next_command = command;
+        next_status = status;
+        next_selected = 0;
 
         next_bus_out = a_bus_out;
         next_operational_out = 0;
@@ -183,11 +226,11 @@ module channel_out_protocol (
                 // 6 microseconds.
                 if (state_timer == SYSTEM_RESET_DURATION_100_NS * CLOCKS_PER_100_NS)
                 begin
-                    next_state = STATE_READY;
+                    next_state = STATE_IDLE;
                 end
             end
 
-            STATE_READY:
+            STATE_IDLE:
             begin
                 next_in_tready = 1;
 
@@ -198,6 +241,8 @@ module channel_out_protocol (
                 // TODO: Compute parity when needed then we could leave that
                 // low here too.
                 next_bus_out = 8'b0;
+
+                // TODO: Protocol violation check
 
                 if (in_tready && in_tvalid)
                 begin
@@ -223,17 +268,74 @@ module channel_out_protocol (
                 end
             end
 
+            STATE_SELECTED:
+            begin
+                next_in_tready = 1;
+
+                next_operational_out = 1;
+                next_hold_out = channel_burst;
+                next_select_out = channel_burst;
+
+                next_selected = 1;
+
+                // TODO: Protocol violation check
+
+                if (!channel_burst && !a_operational_in)
+                begin
+                    if (in_tready && in_tvalid)
+                    begin
+                        next_in_tready = 0;
+
+                        $display("TODO: need to invalidate request...");
+                        $finish;
+                    end
+                    else
+                    begin
+                        next_state = STATE_IDLE;
+                    end
+                end
+                else if (in_tready && in_tvalid)
+                begin
+                    next_in_tready = 0;
+
+                    $display("TODO: none implemented yet");
+                    $finish;
+                end
+                else if (a_service_in && !a_select_in && !a_address_in && !a_status_in)
+                begin
+                    next_state = STATE_DATA_TRANSFER_1;
+                end
+            end
+
             STATE_WAIT:
             begin
                 next_out_tvalid = 1;
 
                 next_operational_out = 1;
 
+                // Preserve selection state while waiting on driver.
+                if (selected)
+                begin
+                    next_hold_out = channel_burst;
+                    next_select_out = channel_burst;
+
+                    next_selected = selected;
+                end
+
+                // TODO: Protocol violation check
+
                 if (out_tready && out_tvalid)
                 begin
                     next_out_tvalid = 0;
 
-                    next_state = STATE_READY;
+                    if (selected)
+                    begin
+                        next_state = STATE_SELECTED;
+                    end
+                    else
+                    begin
+                        next_state = STATE_IDLE;
+                    end
                 end
             end
 
@@ -318,7 +420,7 @@ module channel_out_protocol (
                 end
                 else if (a_status_in && !a_operational_in && !a_select_in && !a_address_in && !a_service_in)
                 begin
-                    next_state = STATE_INITIAL_SELECTION_13;
+                    next_state = STATE_INITIAL_SELECTION_14;
                 end
                 else if (a_select_in && !a_operational_in && !a_address_in && !a_status_in && !a_service_in)
                 begin
@@ -372,23 +474,7 @@ module channel_out_protocol (
                 begin
                     if (state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
                     begin
-                        if (!bus_in_parity_valid)
-                        begin
-                            error_parity;
-                        end
-                        else if (a_bus_in == address)
-                        begin
-                            next_state = STATE_INITIAL_SELECTION_7;
-                        end
-                        else
-                        begin
-                            // NOTE: It's not clear what can, or should, be done
-                            // when the address does not match.
-                            next_out_tdata = out_error(ERROR_INITIAL_SELECTION_ADDRESS_MISMATCH);
-                            next_out_tvalid = 1;
-
-                            next_state = STATE_WAIT;
-                        end
+                        next_state = STATE_INITIAL_SELECTION_7;
                     end
                 end
                 else
@@ -398,6 +484,38 @@ module channel_out_protocol (
             end
 
             STATE_INITIAL_SELECTION_7:
+            begin
+                next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+
+                if (a_operational_in && a_address_in && !a_select_in && !a_status_in && !a_service_in)
+                begin
+                    if (!bus_in_parity_valid)
+                    begin
+                        error_parity;
+                    end
+                    else if (a_bus_in == address)
+                    begin
+                        next_state = STATE_INITIAL_SELECTION_8;
+                    end
+                    else
+                    begin
+                        // NOTE: It's not clear what can, or should, be done
+                        // when the address does not match.
+                        next_out_tdata = out_error(ERROR_INITIAL_SELECTION_ADDRESS_MISMATCH);
+                        next_out_tvalid = 1;
+
+                        next_state = STATE_WAIT;
+                    end
+                end
+                else
+                begin
+                    error_tags;
+                end
+            end
+
+            STATE_INITIAL_SELECTION_8:
             begin
                 next_bus_out = command;
                 next_operational_out = 1;
@@ -416,27 +534,6 @@ module channel_out_protocol (
                 begin
                     if (state_timer == BUS_OUT_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
                     begin
-                        next_state = STATE_INITIAL_SELECTION_8;
-                    end
-                end
-                else
-                begin
-                    error_tags;
-                end
-            end
-
-            STATE_INITIAL_SELECTION_8:
-            begin
-                next_bus_out = command;
-                next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
-                next_command_out = 1;
-
-                if (a_operational_in && !a_select_in && !a_status_in && !a_service_in)
-                begin
-                    if (!a_address_in)
-                    begin
                         next_state = STATE_INITIAL_SELECTION_9;
                     end
                 end
@@ -448,13 +545,15 @@ module channel_out_protocol (
 
             STATE_INITIAL_SELECTION_9:
             begin
+                next_bus_out = command;
                 next_operational_out = 1;
                 next_hold_out = channel_burst;
                 next_select_out = channel_burst;
+                next_command_out = 1;
 
-                if (a_operational_in && !a_select_in && !a_address_in && !a_service_in)
+                if (a_operational_in && !a_select_in && !a_status_in && !a_service_in)
                 begin
-                    if (a_status_in)
+                    if (!a_address_in)
                     begin
                         next_state = STATE_INITIAL_SELECTION_10;
                     end
@@ -471,9 +570,9 @@ module channel_out_protocol (
                 next_hold_out = channel_burst;
                 next_select_out = channel_burst;
 
-                if (a_operational_in && a_status_in && !a_select_in && !a_address_in && !a_service_in)
+                if (a_operational_in && !a_select_in && !a_address_in && !a_service_in)
                 begin
-                    if (state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
+                    if (a_status_in)
                     begin
                         next_state = STATE_INITIAL_SELECTION_11;
                     end
@@ -492,14 +591,8 @@ module channel_out_protocol (
 
                 if (a_operational_in && a_status_in && !a_select_in && !a_address_in && !a_service_in)
                 begin
-                    if (!bus_in_parity_valid)
+                    if (state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
                     begin
-                        error_parity;
-                    end
-                    else
-                    begin
-                        next_out_tdata = out_status(a_bus_in);
-
                         next_state = STATE_INITIAL_SELECTION_12;
                     end
                 end
@@ -515,23 +608,17 @@ module channel_out_protocol (
                 next_hold_out = channel_burst;
                 next_select_out = channel_burst;
 
-                // SPEC: If the channel accepts the initial status, it responds
-                // by raising 'service out', allowing the control unit to drop
-                // 'status in'. If the channel does not accept the initial
-                // status, it responds by raising 'command out', allowing the
-                // control unit to drop 'status in'.
-                //
-                // NOTE: Initial status is always accepted here, it is assumed
-                // that the caller can always handle initial status.
-                next_service_out = 1;
-
-                if (a_operational_in && !a_select_in && !a_address_in && !a_service_in)
+                if (a_operational_in && a_status_in && !a_select_in && !a_address_in && !a_service_in)
                 begin
-                    if (!a_status_in)
+                    if (!bus_in_parity_valid)
                     begin
-                        next_out_tvalid = 1;
+                        error_parity;
+                    end
+                    else
+                    begin
+                        next_status = a_bus_in;
 
-                        next_state = STATE_WAIT;
+                        next_state = STATE_INITIAL_SELECTION_13;
                     end
                 end
                 else
@@ -543,15 +630,30 @@ module channel_out_protocol (
             STATE_INITIAL_SELECTION_13:
             begin
                 next_operational_out = 1;
-                next_hold_out = 1;
-                next_select_out = 1;
-                next_address_out = 1;
+                next_hold_out = channel_burst;
+                next_select_out = channel_burst;
 
-                if (a_status_in && !a_operational_in && !a_select_in && !a_address_in && !a_service_in)
+                // SPEC: If the channel accepts the initial status, it responds
+                // by raising 'service out', allowing the control unit to drop
+                // 'status in'. If the channel does not accept the initial
+                // status, it responds by raising 'command out', allowing the
+                // control unit to drop 'status in'.
+                //
+                // NOTE: Initial status is always accepted here, it is assumed
+                // that the driver can always handle initial status.
+                next_service_out = 1;
+
+                if (!operational_in_violation && !a_select_in && !a_address_in && !a_service_in)
                 begin
-                    if (state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
+                    if (!a_status_in)
                     begin
-                        next_state = STATE_INITIAL_SELECTION_14;
+                        next_out_tdata = out_status(status);
+                        next_out_tvalid = 1;
+
+                        // TODO: xxx
+                        next_selected = !status[4] && a_operational_in;
+
+                        next_state = STATE_WAIT;
                     end
                 end
                 else
@@ -569,30 +671,8 @@ module channel_out_protocol (
 
                 if (a_status_in && !a_operational_in && !a_select_in && !a_address_in && !a_service_in)
                 begin
-                    // SPEC: During execution of the short-busy sequence, the
-                    // control unit presents status of either (1) busy and
-                    // status modifier, (2) busy, status modifier, and
-                    // control-unit end, or (3) busy. Presentation of any other
-                    // status condition by the control unit or device may cause
-                    // an error condition to be recognized.
-                    //
-                    // NOTE: Only busy is checked here, additional validation
-                    // should be performed by the caller.
-                    if (!bus_in_parity_valid)
+                    if (state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
                     begin
-                        error_parity;
-                    end
-                    else
-                    begin
-                        if (a_bus_in[4])
-                        begin
-                            next_out_tdata = out_status(a_bus_in);
-                        end
-                        else
-                        begin
-                            next_out_tdata = out_error(ERROR_INVALID_SHORT_BUSY_STATUS);
-                        end
-
                         next_state = STATE_INITIAL_SELECTION_15;
                     end
                 end
@@ -605,12 +685,212 @@ module channel_out_protocol (
             STATE_INITIAL_SELECTION_15:
             begin
                 next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+                next_address_out = 1;
+
+                if (a_status_in && !a_operational_in && !a_select_in && !a_address_in && !a_service_in)
+                begin
+                    // SPEC: During execution of the short-busy sequence, the
+                    // control unit presents status of either (1) busy and
+                    // status modifier, (2) busy, status modifier, and
+                    // control-unit end, or (3) busy. Presentation of any other
+                    // status condition by the control unit or device may cause
+                    // an error condition to be recognized.
+                    //
+                    // NOTE: Only busy is checked here, additional validation
+                    // should be performed by the driver.
+                    if (!bus_in_parity_valid)
+                    begin
+                        error_parity;
+                    end
+                    else
+                    begin
+                        if (a_bus_in[4])
+                        begin
+                            next_status = a_bus_in;
+                            next_out_tdata = out_status(a_bus_in);
+                        end
+                        else
+                        begin
+                            next_out_tdata = out_error(ERROR_INVALID_SHORT_BUSY_STATUS);
+                        end
+
+                        next_state = STATE_INITIAL_SELECTION_16;
+                    end
+                end
+                else
+                begin
+                    error_tags;
+                end
+            end
+
+            STATE_INITIAL_SELECTION_16:
+            begin
+                next_operational_out = 1;
                 next_address_out = 1;
 
                 if (!a_operational_in && !a_select_in && !a_address_in && !a_service_in)
                 begin
                     if (!a_status_in)
                     begin
+                        // Out data set by previous state.
+                        next_out_tvalid = 1;
+
+                        next_state = STATE_WAIT;
+                    end
+                end
+                else
+                begin
+                    error_tags;
+                end
+            end
+
+            STATE_DATA_TRANSFER_1:
+            begin
+                next_operational_out = 1;
+                next_hold_out = channel_burst;
+                next_select_out = channel_burst;
+
+                next_selected = 1;
+
+                if (a_service_in && !operational_in_violation && !a_select_in && !a_address_in && !a_status_in)
+                begin
+                    // TODO: This module is unaware of the transfer direction
+                    // which means this delay is unecessary in some cases.
+                    if (state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
+                    begin
+                        next_state = STATE_DATA_TRANSFER_2;
+                    end
+                end
+                else
+                begin
+                    error_tags;
+                end
+            end
+
+            STATE_DATA_TRANSFER_2:
+            begin
+                next_operational_out = 1;
+                next_hold_out = channel_burst;
+                next_select_out = channel_burst;
+
+                next_selected = 1;
+
+                if (a_service_in && !operational_in_violation && !a_select_in && !a_address_in && !a_status_in)
+                begin
+                    // This module is unaware of the the transfer direction, if
+                    // data is being requested the bus in parity is not required
+                    // to be valid therefore validation must be done by the
+                    // driver.
+                    next_out_tdata = { bus_in_parity_valid, 7'h02, address, a_bus_in };
+                    next_out_tvalid = 1;
+
+                    next_state = STATE_DATA_TRANSFER_3;
+                end
+                else
+                begin
+                    error_tags;
+                end
+            end
+
+            STATE_DATA_TRANSFER_3:
+            begin
+                next_out_tvalid = 1;
+
+                next_operational_out = 1;
+                next_hold_out = channel_burst;
+                next_select_out = channel_burst;
+
+                next_selected = 1;
+
+                // TODO: Protocol violation check
+
+                if (out_tready && out_tvalid)
+                begin
+                    next_out_tvalid = 0;
+
+                    next_state = STATE_DATA_TRANSFER_4;
+                end
+            end
+
+            STATE_DATA_TRANSFER_4:
+            begin
+                next_in_tready = 1;
+
+                next_operational_out = 1;
+                next_hold_out = channel_burst;
+                next_select_out = channel_burst;
+
+                next_selected = 1;
+
+                // TODO: Protocol violation check
+
+                if (in_tready && in_tvalid)
+                begin
+                    next_in_tready = 0;
+
+                    case (in_tdata[23:16])
+                        8'h05:
+                        begin
+                            next_state = STATE_DATA_TRANSFER_5;
+                        end
+
+                        8'h06:
+                        begin
+                            next_state = STATE_DATA_TRANSFER_6;
+                        end
+
+                        default:
+                        begin
+                            next_out_tdata = out_error(ERROR_INVALID_IN);
+                            next_out_tvalid = 1;
+
+                            next_state = STATE_WAIT;
+                        end
+                    endcase
+                end
+            end
+
+            STATE_DATA_TRANSFER_5:
+            begin
+                next_operational_out = 1;
+                next_hold_out = channel_burst;
+                next_select_out = channel_burst;
+                next_service_out = 1;
+
+                next_selected = 1;
+
+                if (!operational_in_violation && !a_select_in && !a_address_in && !a_status_in)
+                begin
+                    if (!a_service_in)
+                    begin
+                        next_out_tdata = 24'b0;
+                        next_out_tvalid = 1;
+
+                        next_state = STATE_WAIT;
+                    end
+                end
+                else
+                begin
+                    error_tags;
+                end
+            end
+
+            STATE_DATA_TRANSFER_6:
+            begin
+                next_operational_out = 1;
+                next_hold_out = channel_burst;
+                next_select_out = channel_burst;
+                next_command_out = 1;
+
+                next_selected = 1;
+
+                if (!operational_in_violation && !a_select_in && !a_address_in && !a_status_in)
+                begin
+                    if (!a_service_in)
+                    begin
+                        next_out_tdata = 24'b0;
                         next_out_tvalid = 1;
 
                         next_state = STATE_WAIT;
@@ -635,12 +915,14 @@ module channel_out_protocol (
             state_timer <= 0;
         end
 
-        address <= next_address;
-        command <= next_command;
-
         in_tready <= next_in_tready;
         out_tdata <= next_out_tdata;
         out_tvalid <= next_out_tvalid;
+
+        address <= next_address;
+        command <= next_command;
+        status <= next_status;
+        selected <= next_selected;
 
         a_bus_out <= next_bus_out;
         a_bus_out_parity <= ~^next_bus_out; // Odd parity
@@ -661,8 +943,6 @@ module channel_out_protocol (
             out_tvalid <= 0;
         end
     end
-
-    assign request = a_request_in;
 
     function [23:0] out_status (
         input [7:0] status

@@ -60,6 +60,7 @@ module mock_cu (
     wire bus_out_parity;
     wire operational_out;
     reg request_in;
+    wire hold_out;
     wire address_out;
     reg operational_in;
     reg address_in;
@@ -123,7 +124,7 @@ module mock_cu (
         .bus_out_parity(bus_out_parity),
         .operational_out(operational_out),
         .request_in(request_in),
-        .hold_out(), // TODO
+        .hold_out(hold_out),
         .address_out(address_out),
         .operational_in(operational_in),
         .address_in(address_in),
@@ -159,7 +160,7 @@ module mock_cu (
 
                     selection_y <= selection_x;
 
-                    if (address_out && selection_x && bus_out == ADDRESS)
+                    if (address_out && selection_x && hold_out && bus_out == ADDRESS)
                     begin
                         selection_y <= 1'b0; // Intercept the selection
 
@@ -266,8 +267,24 @@ module mock_cu (
                     if (service_out)
                     begin
                         status_in <= 0;
-                        state <= 7;
+
+                        if (mock_busy)
+                        begin
+                            operational_in <= selection_x; // To avoid violation
+                            state <= 61;
+                        end
+                        else
+                        begin
+                            state <= 7;
+                        end
                     end
+                end
+
+                61: // "Long" busy
+                begin
+                    operational_in <= selection_x; // To avoid violation
+
+                    state <= 0;
                 end
 
                 99: // Short busy
