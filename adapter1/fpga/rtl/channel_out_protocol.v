@@ -283,7 +283,7 @@ module channel_out_protocol (
 
                 // TODO: Protocol violation check
 
-                if (!channel_burst && !a_operational_in)
+                if (!a_operational_in)
                 begin
                     if (in_tready && in_tvalid)
                     begin
