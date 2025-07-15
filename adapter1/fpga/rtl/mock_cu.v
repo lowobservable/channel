@@ -282,9 +282,7 @@ module mock_cu (
 
                 61: // "Long" busy
                 begin
-                    operational_in <= selection_x; // To avoid violation
-
-                    state <= 0;
+                    state <= 50;
                 end
 
                 99: // Short busy
@@ -297,7 +295,7 @@ module mock_cu (
                     if (!selection_x)
                     begin
                         status_in <= 0;
-                        state <= 0;
+                        state <= 50;
                     end
                 end
 
@@ -309,7 +307,7 @@ module mock_cu (
                     begin
                         if (status[4] || (status[3] && status[2]))
                         begin
-                            state <= 0;
+                            state <= 50;
                         end
                         else if (command == 8'h01 /* WRITE */)
                         begin
@@ -433,6 +431,17 @@ module mock_cu (
                     if (service_out)
                     begin
                         status_in <= 0;
+                        state <= 50;
+                    end
+                end
+
+                50:
+                begin
+                    operational_in <= selection_x;
+
+                    if (!selection_x)
+                    begin
+                        // Okay, safe to start listening again.
                         state <= 0;
                     end
                 end

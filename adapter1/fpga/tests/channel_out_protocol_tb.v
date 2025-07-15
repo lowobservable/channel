@@ -136,14 +136,10 @@ module channel_out_protocol_tb;
         test_initial_selection_address_not_operational;
         test_initial_selection_busy;
         test_initial_selection_short_busy;
-        test_read_channel_stop;
-        test_write_channel_stop;
+        test_read_command_channel_stop;
+        test_write_command_channel_stop;
 
         /*
-        test_read_command_cu_more;
-        test_read_command_cu_less;
-        test_write_command_cu_more;
-        test_write_command_cu_less;
         test_nop_command;
         test_invalid_command;
         */
@@ -211,7 +207,6 @@ module channel_out_protocol_tb;
         exec({ 8'h00, 8'h00, 8'h00 }, out); // Invalid
 
         `assert_equal(out[23:8], { 8'hff, 8'h01 }, "response should be invalid in error");
-        `assert_low(protocol.selected, "selected should be LOW");
 
         $display("END: test_invalid_in");
     end
@@ -227,7 +222,6 @@ module channel_out_protocol_tb;
         exec({ 8'h11, 8'h1b, 8'h02 }, out); // Initial Selection - READ
 
         `assert_equal(out[23:8], { 8'hff, 8'h02 }, "response should be address not operational error");
-        `assert_low(protocol.selected, "selected should be LOW");
 
         $display("END: test_initial_selection_address_not_operational");
     end
@@ -245,10 +239,7 @@ module channel_out_protocol_tb;
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out, { 8'h01, 8'h1a, 8'h10 }, "response should be BUSY status");
-        `assert_low(protocol.selected, "selected should be LOW");
-
-        #100;
+        `assert_equal(out, { 4'b1001, 4'h1, 8'h1a, 8'h10 }, "response should be BUSY status");
 
         $display("END: test_initial_selection_busy");
     end
@@ -266,18 +257,17 @@ module channel_out_protocol_tb;
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out, { 8'h01, 8'h1a, 8'h10 }, "response should be BUSY status");
-        `assert_low(protocol.selected, "selected should be LOW");
+        `assert_equal(out, { 4'b1101, 4'h1, 8'h1a, 8'h10 }, "response should be BUSY status");
 
         $display("END: test_initial_selection_short_busy");
     end
     endtask
 
-    task test_read_channel_stop;
+    task test_read_command_channel_stop;
         reg [23:0] out;
         reg [7:0] byte;
     begin
-        $display("START: test_read_channel_stop");
+        $display("START: test_read_command_channel_stop");
 
         reset;
 
@@ -287,14 +277,13 @@ module channel_out_protocol_tb;
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out, { 8'h01, 8'h1a, 8'h00 }, "response should be accepted status");
-        `assert_high(protocol.selected, "selected should be HIGH");
+        `assert_equal(out, { 4'b1001, 4'h1, 8'h1a, 8'h00 }, "response should be accepted status");
 
         for (byte = 1; byte <= 7; byte = byte + 1)
         begin
             wait_event(out);
 
-            `assert_equal(out, { 8'h82, 8'h1a, byte }, "event should be data transfer with correct byte and valid parity");
+            `assert_equal(out, { 4'b0001, 4'h2, 8'h1a, byte }, "event should be data transfer with correct byte and valid parity");
 
             if (byte == 7)
             begin
@@ -310,15 +299,23 @@ module channel_out_protocol_tb;
 
         `assert_equal(cu.count, 6, "count should be 6");
 
-        $display("END: test_read_channel_stop");
+        wait_event(out);
+
+        `assert_equal(out, { 4'b0001, 4'h1, 8'h1a, 8'h0c }, "response should be CE + DE status");
+
+        exec({ 8'h02, 16'h00 }, out); // Accept Status - No Chaining
+
+        `assert_equal(out, 24'h00, "response should be acknowledgement");
+
+        $display("END: test_read_command_channel_stop");
     end
     endtask
 
-    task test_write_channel_stop;
+    task test_write_command_channel_stop;
         reg [23:0] out;
         reg [7:0] byte;
     begin
-        $display("START: test_write_channel_stop");
+        $display("START: test_write_command_channel_stop");
 
         reset;
 
@@ -328,14 +325,13 @@ module channel_out_protocol_tb;
 
         exec({ 8'h11, 8'h1a, 8'h01 }, out); // Initial Selection - WRITE
 
-        `assert_equal(out, { 8'h01, 8'h1a, 8'h00 }, "response should be accepted status");
-        `assert_high(protocol.selected, "selected should be HIGH");
+        `assert_equal(out, { 4'b1001, 4'h1, 8'h1a, 8'h00 }, "response should be accepted status");
 
         for (byte = 1; byte <= 7; byte = byte + 1)
         begin
             wait_event(out);
 
-            `assert_equal(out, { 8'h82, 8'h1a, 8'h00 }, "event should be data transfer");
+            `assert_equal(out, { 4'b0001, 4'h2, 8'h1a, 8'h00 }, "event should be data transfer");
 
             if (byte == 7)
             begin
@@ -351,7 +347,15 @@ module channel_out_protocol_tb;
 
         `assert_equal(cu.count, 6, "count should be 6");
 
-        $display("END: test_write_channel_stop");
+        wait_event(out);
+
+        `assert_equal(out, { 4'b0001, 4'h1, 8'h1a, 8'h0c }, "response should be CE + DE status");
+
+        exec({ 8'h02, 16'h00 }, out); // Accept Status - No Chaining
+
+        `assert_equal(out, 24'h00, "response should be acknowledgement");
+
+        $display("END: test_write_command_channel_stop");
     end
     endtask
 
@@ -441,77 +445,6 @@ module channel_out_protocol_tb;
     endtask
 
     /*
-    task test_read_command_cu_less;
-    begin
-        $display("START: test_read_command_cu_less");
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        #3;
-
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 0;
-        cu_mock_limit = 6; // CU can provide 6 bytes
-
-        start_channel(8'h1a, 8'h02, 16); // READ
-
-        #500;
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        `assert_equal(channel_count, 10, "count should be 10")
-
-        $display("END: test_read_command_cu_less");
-    end
-    endtask
-
-    task test_write_command_cu_more;
-    begin
-        $display("START: test_write_command_cu_more");
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        #3;
-
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 0;
-        cu_mock_limit = 16; // CU can accept 16 bytes
-
-        start_channel(8'h1a, 8'h01, 6); // WRITE
-
-        #500;
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        `assert_equal(channel_count, 0, "count should be 0")
-
-        $display("END: test_write_command_cu_more");
-    end
-    endtask
-
-    task test_write_command_cu_less;
-    begin
-        $display("START: test_write_command_cu_less");
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        #3;
-
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 0;
-        cu_mock_limit = 6; // CU can accept 6 bytes
-
-        start_channel(8'h1a, 8'h01, 16); // WRITE
-
-        #500;
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        `assert_equal(channel_count, 10, "count should be 10")
-
-        $display("END: test_write_command_cu_less");
-    end
-    endtask
 
     task test_nop_command;
     begin
@@ -555,59 +488,5 @@ module channel_out_protocol_tb;
     end
     endtask
 
-    task start_channel (
-        input [7:0] addr,
-        input [7:0] command,
-        input [7:0] count
-    );
-    begin
-        channel_addr = addr;
-        channel_command = command;
-        channel_count = count;
-
-        channel_data_send_tdata = 1;
-
-        channel_start = 1;
-
-        #2;
-        channel_start = 0;
-    end
-    endtask
-
-    always @(posedge clk)
-    begin
-        if (channel_status_tvalid)
-        begin
-            channel_status <= channel_status_tdata;
-        end
-
-        channel_stop <= 0;
-
-        channel_data_send_tvalid <= 0;
-        channel_data_recv_tready <= 0;
-
-        if (channel_data_send_tready || channel_data_recv_tvalid)
-        begin
-            if (channel_count == 0)
-            begin
-                channel_stop <= 1;
-            end
-            else
-            begin
-                channel_data_send_tvalid <= 1;
-                channel_data_recv_tready <= 1;
-            end
-        end
-
-        if ((channel_data_send_tvalid && channel_data_send_tready) || (channel_data_recv_tvalid && channel_data_recv_tready))
-        begin
-            channel_count <= channel_count - 1;
-        end
-
-        if ((channel_data_send_tvalid && channel_data_send_tready))
-        begin
-            channel_data_send_tdata <= channel_data_send_tdata + 1;
-        end
-    end
     */
 endmodule

@@ -97,6 +97,6 @@ module tee (
         service_out <= b_service_out;
         suppress_out <= b_suppress_out;
 
-        selection_x <= !BYPASS ? (PRIORITY ? b_select_out : a_select_in) : 1'b0;
+        selection_x <= !BYPASS ? ((PRIORITY ? b_select_out : a_select_in) & a_hold_out) : 1'b0;
     end
 endmodule
