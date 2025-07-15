@@ -137,6 +137,7 @@ module channel_out_protocol_tb;
         test_initial_selection_busy;
         test_initial_selection_short_busy;
         test_read_channel_stop;
+        test_write_channel_stop;
 
         /*
         test_read_command_cu_more;
@@ -310,6 +311,47 @@ module channel_out_protocol_tb;
         `assert_equal(cu.count, 6, "count should be 6");
 
         $display("END: test_read_channel_stop");
+    end
+    endtask
+
+    task test_write_channel_stop;
+        reg [23:0] out;
+        reg [7:0] byte;
+    begin
+        $display("START: test_write_channel_stop");
+
+        reset;
+
+        cu_mock_busy = 0;
+        cu_mock_short_busy = 0;
+        cu_mock_limit = 16; // CU can provide 16 bytes
+
+        exec({ 8'h11, 8'h1a, 8'h01 }, out); // Initial Selection - WRITE
+
+        `assert_equal(out, { 8'h01, 8'h1a, 8'h00 }, "response should be accepted status");
+        `assert_high(protocol.selected, "selected should be HIGH");
+
+        for (byte = 1; byte <= 7; byte = byte + 1)
+        begin
+            wait_event(out);
+
+            `assert_equal(out, { 8'h82, 8'h1a, 8'h00 }, "event should be data transfer");
+
+            if (byte == 7)
+            begin
+                exec({ 8'h06, 16'h00 }, out); // Stop
+            end
+            else
+            begin
+                exec({ 8'h04, byte, 8'h00 }, out); // Send Data
+            end
+
+            `assert_equal(out, 24'h00, "response should be acknowledgement");
+        end
+
+        `assert_equal(cu.count, 6, "count should be 6");
+
+        $display("END: test_write_channel_stop");
     end
     endtask
 

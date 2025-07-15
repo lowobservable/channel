@@ -30,9 +30,9 @@ module channel_out_protocol (
     // ...0   3h                     - Stack Status      -> Ack | Error
     // ...1   3h                     - Suppress Status   -> Ack | Error
     //
-    //        4h DDDD DDDD           - Send Data
-    //        5h                     - Accept Data
-    //        6h                     - Stop              -> Ack | Error
+    //        4h DDDD DDDD           - Send Data         -> Ack
+    //        5h                     - Accept Data       -> Ack
+    //        6h                     - Stop              -> Ack
     //                               - Interface Disconnect
     //
     //        fh AAAA AAAA           - Selective Reset   -> Ack | Error
@@ -117,6 +117,7 @@ module channel_out_protocol (
     localparam STATE_DATA_TRANSFER_4 = 23;
     localparam STATE_DATA_TRANSFER_5 = 24;
     localparam STATE_DATA_TRANSFER_6 = 25;
+    localparam STATE_DATA_TRANSFER_7 = 26;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
@@ -132,6 +133,8 @@ module channel_out_protocol (
     reg [7:0] next_command;
     reg [7:0] status;
     reg [7:0] next_status;
+    reg [7:0] data;
+    reg [7:0] next_data;
     reg next_selected;
 
     wire bus_in_parity_valid;
@@ -163,7 +166,7 @@ module channel_out_protocol (
 
     // vvv
     reg operational_in_violation;
-    reg [7:0] prev_operational_in;
+    reg prev_operational_in;
 
     always @(posedge clk)
     begin
@@ -207,9 +210,15 @@ module channel_out_protocol (
         next_address = address;
         next_command = command;
         next_status = status;
+        next_data = data;
         next_selected = 0;
 
-        next_bus_out = a_bus_out;
+        // Leave bus out low when idle to reduce driver current.
+        //
+        // TODO: Compute parity when needed then we could leave that low here
+        // too.
+        next_bus_out = 8'b0;
+
         next_operational_out = 0;
         next_hold_out = 0;
         next_select_out = 0;
@@ -235,12 +244,6 @@ module channel_out_protocol (
                 next_in_tready = 1;
 
                 next_operational_out = 1;
-
-                // Leave bus out low when idle to reduce driver current.
-                //
-                // TODO: Compute parity when needed then we could leave that
-                // low here too.
-                next_bus_out = 8'b0;
 
                 // TODO: Protocol violation check
 
@@ -831,14 +834,21 @@ module channel_out_protocol (
                     next_in_tready = 0;
 
                     case (in_tdata[23:16])
+                        8'h04:
+                        begin
+                            next_data = in_tdata[15:8];
+
+                            next_state = STATE_DATA_TRANSFER_5;
+                        end
+
                         8'h05:
                         begin
-                            next_state = STATE_DATA_TRANSFER_5;
+                            next_state = STATE_DATA_TRANSFER_6;
                         end
 
                         8'h06:
                         begin
-                            next_state = STATE_DATA_TRANSFER_6;
+                            next_state = STATE_DATA_TRANSFER_7;
                         end
 
                         default:
@@ -854,6 +864,29 @@ module channel_out_protocol (
 
             STATE_DATA_TRANSFER_5:
             begin
+                next_bus_out = data;
+                next_operational_out = 1;
+                next_hold_out = channel_burst;
+                next_select_out = channel_burst;
+
+                next_selected = 1;
+
+                if (a_service_in && !operational_in_violation && !a_select_in && !a_address_in && !a_status_in)
+                begin
+                    if (state_timer == BUS_OUT_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
+                    begin
+                        next_state = STATE_DATA_TRANSFER_6;
+                    end
+                end
+                else
+                begin
+                    error_tags;
+                end
+            end
+
+            STATE_DATA_TRANSFER_6:
+            begin
+                next_bus_out = data;
                 next_operational_out = 1;
                 next_hold_out = channel_burst;
                 next_select_out = channel_burst;
@@ -877,7 +910,7 @@ module channel_out_protocol (
                 end
             end
 
-            STATE_DATA_TRANSFER_6:
+            STATE_DATA_TRANSFER_7:
             begin
                 next_operational_out = 1;
                 next_hold_out = channel_burst;
@@ -922,6 +955,7 @@ module channel_out_protocol (
         address <= next_address;
         command <= next_command;
         status <= next_status;
+        data <= next_data;
         selected <= next_selected;
 
         a_bus_out <= next_bus_out;
