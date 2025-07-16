@@ -278,7 +278,11 @@ module channel_out_protocol (
 
             STATE_SELECTED:
             begin
-                next_in_tready = 1;
+                // TODO: Currently there are no requests supported while
+                // selected, it is possible that selective reset will be
+                // implemented here at some point.
+                //
+                // next_in_tready = 1;
 
                 next_operational_out = 1;
                 next_hold_out = channel_burst;
@@ -290,32 +294,33 @@ module channel_out_protocol (
 
                 if (!a_operational_in)
                 begin
-                    if (in_tready && in_tvalid)
-                    begin
-                        next_in_tready = 0;
-
-                        $display("TODO: need to invalidate request...");
-                        $finish;
-                    end
-                    else
-                    begin
-                        next_state = STATE_IDLE;
-                    end
+                    // if (in_tready && in_tvalid)
+                    // begin
+                    //     next_in_tready = 0;
+                    //
+                    //     $display("TODO: request is no longer valid");
+                    //     $finish;
+                    // end
+                    // else
+                    // begin
+                    //     next_state = STATE_IDLE;
+                    // end
+                    next_state = STATE_IDLE;
                 end
-                else if (in_tready && in_tvalid)
+                // else if (in_tready && in_tvalid)
+                // begin
+                //     next_in_tready = 0;
+                //
+                //     $display("TODO: none implemented yet");
+                //     $finish;
+                // end
+                else if (a_service_in && !a_select_in && !a_address_in && !a_status_in)
                 begin
-                    next_in_tready = 0;
-
-                    $display("TODO: none implemented yet");
-                    $finish;
+                    next_state = STATE_DATA_TRANSFER_1;
                 end
                 else if (a_status_in && !a_select_in && !a_address_in && !a_service_in)
                 begin
                     next_state = STATE_ENDING_1;
-                end
-                else if (a_service_in && !a_select_in && !a_address_in && !a_status_in)
-                begin
-                    next_state = STATE_DATA_TRANSFER_1;
                 end
             end
 
