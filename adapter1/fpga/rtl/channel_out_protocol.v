@@ -53,9 +53,13 @@ module channel_out_protocol (
     output reg out_tvalid,
     input wire out_tready,
 
-    output wire request,
+    // TODO: The driver is currently responsible for lowering burst, to allow
+    // the control unit to disconnect, when the connection is complete such as
+    // when initial selection results in busy or a DE status is encountered.
+    input wire burst,
+
     output reg connected,
-    input wire channel_burst,
+    output wire request,
 
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
@@ -135,6 +139,7 @@ module channel_out_protocol (
     reg [23:0] next_out_tdata;
     reg next_out_tvalid = 0;
 
+    reg burst_valid;
     reg [7:0] address;
     reg [7:0] next_address;
     reg [7:0] command;
@@ -142,6 +147,8 @@ module channel_out_protocol (
     reg [7:0] data;
     reg [7:0] next_data;
     reg next_connected;
+
+    assign request = a_request_in;
 
     wire bus_in_parity_valid;
 
@@ -156,6 +163,7 @@ module channel_out_protocol (
     reg next_service_out;
     reg next_suppress_out;
 
+    // vvv
     reg [7:0] hold_out_delay = 0;
 
     always @(posedge clk)
@@ -170,7 +178,6 @@ module channel_out_protocol (
         end
     end
 
-    // vvv
     reg operational_in_violation;
     reg prev_operational_in;
 
@@ -202,8 +209,6 @@ module channel_out_protocol (
         prev_operational_in <= a_operational_in;
     end
     // ^^^
-
-    assign request = a_request_in;
 
     always @(*)
     begin
@@ -285,8 +290,8 @@ module channel_out_protocol (
                 // next_in_tready = 1;
 
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = a_operational_in;
 
@@ -334,8 +339,8 @@ module channel_out_protocol (
                 // Preserve connection state while waiting on driver.
                 if (connected)
                 begin
-                    next_hold_out = channel_burst;
-                    next_select_out = channel_burst;
+                    next_hold_out = burst && burst_valid;
+                    next_select_out = burst && burst_valid;
 
                     next_connected = connected;
                 end
@@ -557,8 +562,8 @@ module channel_out_protocol (
                 // duration of the connection, a control unit does not
                 // disconnect from the I/O interface before ‘select out' ('hold
                 // out') falls.
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -579,8 +584,8 @@ module channel_out_protocol (
             begin
                 next_bus_out = command;
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
                 next_command_out = 1;
 
                 next_connected = 1;
@@ -601,8 +606,8 @@ module channel_out_protocol (
             STATE_INITIAL_SELECTION_10:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -622,8 +627,8 @@ module channel_out_protocol (
             STATE_INITIAL_SELECTION_11:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -643,8 +648,8 @@ module channel_out_protocol (
             STATE_INITIAL_SELECTION_12:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -663,8 +668,8 @@ module channel_out_protocol (
             STATE_INITIAL_SELECTION_13:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 // SPEC: If the channel accepts the initial status, it responds
                 // by raising 'service out', allowing the control unit to drop
@@ -775,8 +780,8 @@ module channel_out_protocol (
             STATE_DATA_TRANSFER_1:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -798,8 +803,8 @@ module channel_out_protocol (
             STATE_DATA_TRANSFER_2:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -825,8 +830,8 @@ module channel_out_protocol (
                 next_out_tvalid = 1;
 
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -845,8 +850,8 @@ module channel_out_protocol (
                 next_in_tready = 1;
 
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -889,8 +894,8 @@ module channel_out_protocol (
             begin
                 next_bus_out = data;
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -911,8 +916,8 @@ module channel_out_protocol (
             begin
                 next_bus_out = data;
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
                 next_service_out = 1;
 
                 next_connected = 1;
@@ -936,8 +941,8 @@ module channel_out_protocol (
             STATE_DATA_TRANSFER_7:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
                 next_command_out = 1;
 
                 next_connected = 1;
@@ -961,8 +966,8 @@ module channel_out_protocol (
             STATE_ENDING_1:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -982,8 +987,8 @@ module channel_out_protocol (
             STATE_ENDING_2:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -1005,8 +1010,8 @@ module channel_out_protocol (
                 next_out_tvalid = 1;
 
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -1025,8 +1030,8 @@ module channel_out_protocol (
                 next_in_tready = 1;
 
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
 
                 next_connected = 1;
 
@@ -1056,8 +1061,8 @@ module channel_out_protocol (
             STATE_ENDING_5:
             begin
                 next_operational_out = 1;
-                next_hold_out = channel_burst;
-                next_select_out = channel_burst;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
                 next_service_out = 1;
 
                 next_connected = 1;
@@ -1094,6 +1099,9 @@ module channel_out_protocol (
         in_tready <= next_in_tready;
         out_tdata <= next_out_tdata;
         out_tvalid <= next_out_tvalid;
+
+        // The channel cannot force burst mode once 'select out' has dropped.
+        burst_valid <= next_select_out;
 
         address <= next_address;
         command <= next_command;

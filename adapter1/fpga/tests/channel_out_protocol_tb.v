@@ -12,6 +12,8 @@ module channel_out_protocol_tb;
     reg protocol_in_tvalid = 0;
     reg protocol_out_tready = 0;
 
+    reg protocol_burst = 1; // Selector channel behavior
+
     wire [7:0] bus_in;
     wire bus_in_parity;
     wire [7:0] bus_out;
@@ -45,7 +47,7 @@ module channel_out_protocol_tb;
         .out_tvalid(),
         .out_tready(protocol_out_tready),
 
-        .channel_burst(1'b1), // Selector channel behavior
+        .burst(protocol_burst),
 
         .a_bus_in(bus_in),
         .a_bus_in_parity(bus_in_parity),
