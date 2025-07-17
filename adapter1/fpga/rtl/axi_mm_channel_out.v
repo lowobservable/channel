@@ -18,30 +18,7 @@ module axi_mm_channel_out (
     input wire aclk,
     input wire aresetn,
 
-    output reg frontend_enable,
-    output wire channel_active,
-
-    // Parallel Channel "A"...
-    input wire [7:0] a_bus_in,
-    input wire a_bus_in_parity,
-    output wire [7:0] a_bus_out,
-    output wire a_bus_out_parity,
-
-    output wire a_operational_out,
-    input wire a_request_in,
-    output wire a_hold_out,
-    output wire a_select_out,
-    input wire a_select_in,
-    output wire a_address_out,
-    input wire a_operational_in,
-    input wire a_address_in,
-    output wire a_command_out,
-    input wire a_status_in,
-    input wire a_service_in,
-    output wire a_service_out,
-    output wire a_suppress_out,
-
-    // S_AXI...
+    // AXI4-Lite control interface...
     input wire [7:0] s_axi_araddr,
     input wire s_axi_arvalid,
     output reg s_axi_arready,
@@ -66,7 +43,7 @@ module axi_mm_channel_out (
     output reg s_axi_bvalid,
     input wire s_axi_bready,
 
-    // M_AXI...
+    // AXI4-Lite storage interface...
     output wire [31:0] m_axi_araddr,
     output wire m_axi_arvalid,
     input wire m_axi_arready,
@@ -89,393 +66,308 @@ module axi_mm_channel_out (
     input wire m_axi_bvalid,
     output wire m_axi_bready,
 
+    // Parallel Channel "A"...
+    input wire [7:0] a_bus_in,
+    input wire a_bus_in_parity,
+    output wire [7:0] a_bus_out,
+    output wire a_bus_out_parity,
+
+    output wire a_operational_out,
+    input wire a_request_in,
+    output wire a_hold_out,
+    output wire a_select_out,
+    input wire a_select_in,
+    output wire a_address_out,
+    input wire a_operational_in,
+    input wire a_address_in,
+    output wire a_command_out,
+    input wire a_status_in,
+    input wire a_service_in,
+    output wire a_service_out,
+    output wire a_suppress_out,
+
+    output reg frontend_enable,
+
     output reg wrap_tester_enable,
     output reg [19:0] wrap_tester_driver,
-    input wire [19:0] wrap_tester_receiver
+    input wire [19:0] wrap_tester_receiver,
+
+    output wire debug
 );
-    localparam REG_WRAP_TESTER_1 = 8'h00;
-    localparam REG_WRAP_TESTER_2 = 8'h04;
-    localparam REG_CONTROL_1 = 8'h08;
-    localparam REG_CONTROL_2 = 8'h0c;
-    localparam REG_STATUS_1 = 8'h10;
-    localparam REG_STATUS_2 = 8'h14;
-    localparam REG_CCW_1 = 8'h18;
-    localparam REG_CCW_2 = 8'h1c;
+    reg channel_enable = 0;
 
-    initial
-    begin
-        frontend_enable = 1'b0;
-
-        s_axi_arready = 1'b1;
-        s_axi_rvalid = 1'b0;
-
-        s_axi_awready = 1'b1;
-        s_axi_wready = 1'b1;
-        s_axi_bvalid = 1'b0;
-
-        wrap_tester_enable = 1'b0;
-    end
-
-    reg reset = 1'b0;
-
-    reg channel_enable = 1'b0;
-    wire channel_request;
-    reg [7:0] channel_addr;
-    reg channel_start = 1'b0;
-    reg channel_stop = 1'b0;
-    wire [1:0] channel_condition_code;
-    wire [7:0] channel_status_tdata;
-    wire channel_status_tvalid;
-    wire [7:0] channel_data_send_tdata;
-    reg channel_data_send_tvalid;
-    wire channel_data_send_tready;
-    wire [7:0] channel_data_recv_tdata;
-    wire channel_data_recv_tvalid;
-    reg channel_data_recv_tready;
-
-    reg [7:0] ccw_command;
-    reg [15:0] ccw_count;
-    reg [31:0] ccw_data_addr;
-
-    reg [7:0] device_status;
+    reg [7:0] address;
+    reg device_enable;
+    reg [7:0] status;
+    reg status_pending;
+    reg status_stacked;
+    reg status_suppressed;
+    reg [7:0] command;
     reg [15:0] count;
+    reg start_pending;
 
-    channel_out_protocol protocol (
+    // The control interface...
+    //
+    // ---- ---- | ---- ---- | ---- ---- | ---- ----
+    //           |           |           |        FE <- "Channel enable"
+    //           |           |           |        ^---- "Frontend enable"
+    // DDDD DDDD | DDDD DDDD | DDDD      |         W <- Wrap tester enable
+    // RRRR RRRR | RRRR RRRR | RRRR      |
+    // ---- ---- | ---- ---- | ---- ---- | ---- ----
+    // AAAA AAAA |           |           |         E <- "Device enable"
+    //           |           |           |         S <- Start
+    //           | NNNN NNNN | NNNN NNNN | CCCC CCCC
+    //           |           | SSSS SSSS |       RTP <- Supr... / Stack... / Pending
+    //
+    always @(posedge clk)
+    begin
+        // ...
+
+        if (!aresetn)
+        begin
+            channel_enable <= 0;
+            device_enable <= 0;
+            status_pending <= 0;
+            status_stacked <= 0;
+            status_suppressed <= 0;
+            start_pending <= 0;
+
+            frontend_enable <= 0;
+
+            wrap_tester_enable <= 0;
+        end
+    end
+
+    // The channel side of things...
+    reg channel_burst = 0;
+    wire channel_connected;
+    wire channel_request;
+    wire [7:0] channel_error;
+
+    channel_out_protocol #(
+        // ...
+    ) protocol (
         .clk(aclk),
-        .enable(channel_enable),
-        .reset(reset),
+        .reset(!channel_enable),
 
-        .a_bus_in(a_bus_in),
-        .a_bus_in_parity(a_bus_in_parity),
-        .a_bus_out(a_bus_out),
-        .a_bus_out_parity(a_bus_out_parity),
+        .in_tdata(),
+        .in_tvalid(),
+        .in_tready(),
 
-        .a_operational_out(a_operational_out),
-        .a_request_in(a_request_in),
-        .a_hold_out(a_hold_out),
-        .a_select_out(a_select_out),
-        .a_select_in(a_select_in),
-        .a_address_out(a_address_out),
-        .a_operational_in(a_operational_in),
-        .a_address_in(a_address_in),
-        .a_command_out(a_command_out),
-        .a_status_in(a_status_in),
-        .a_service_in(a_service_in),
-        .a_service_out(a_service_out),
-        .a_suppress_out(a_suppress_out),
+        .out_tdata(),
+        .out_tvalid(),
+        .out_tready(),
 
-        .active(channel_active),
+        .burst(channel_burst),
+        .connected(channel_connected),
         .request(channel_request),
+        .error(channel_error),
 
-        .addr(channel_addr),
-        .command(ccw_command),
-        .start(channel_start),
-        .stop(channel_stop),
-        .condition_code(channel_condition_code),
-
-        .status_tdata(channel_status_tdata),
-        .status_tvalid(channel_status_tvalid),
-
-        .data_send_tdata(channel_data_send_tdata),
-        .data_send_tvalid(channel_data_send_tvalid),
-        .data_send_tready(channel_data_send_tready),
-
-        .data_recv_tdata(channel_data_recv_tdata),
-        .data_recv_tvalid(channel_data_recv_tvalid),
-        .data_recv_tready(channel_data_recv_tready)
+        .a_operational_out(),
+        .a_request_in(),
+        .a_hold_out(),
+        .a_select_out(),
+        .a_select_in(),
+        .a_address_out(),
+        .a_operational_in(),
+        .a_address_in(),
+        .a_command_out(),
+        .a_status_in(),
+        .a_service_in(),
+        .a_service_out(),
+        .a_suppress_out()
     );
 
-    always @(posedge aclk)
+    always @(posedge clk)
     begin
-        if (s_axi_arvalid && s_axi_arready)
+        channel_in_tvalid <= 0;
+        channel_out_tready <= 0;
+
+        if (channel_error)
         begin
-            s_axi_rdata <= 32'b0;
-            s_axi_rresp <= 2'b00;
-
-            case (s_axi_araddr)
-                REG_WRAP_TESTER_1:
-                    s_axi_rdata <= { wrap_tester_driver, 11'b0, wrap_tester_enable };
-
-                REG_WRAP_TESTER_2:
-                    s_axi_rdata <= { wrap_tester_receiver, 12'b0 };
-
-                REG_CONTROL_1:
-                    s_axi_rdata <= { frontend_enable, 29'b0, channel_enable, reset };
-
-                REG_CONTROL_2:
-                    s_axi_rdata <= { channel_addr, 23'b0, channel_start || channel_active };
-
-                REG_STATUS_1:
-                    s_axi_rdata <= { 24'b0, channel_condition_code, 4'b0, channel_request, channel_active };
-
-                REG_STATUS_2:
-                    s_axi_rdata <= { device_status, 8'b0, count };
-
-                REG_CCW_1:
-                    s_axi_rdata <= { ccw_command, 8'b0, ccw_count };
-
-                REG_CCW_2:
-                    s_axi_rdata <= ccw_data_addr;
-
-                default:
-                    s_axi_rresp <= 2'b10; // SLVERR
-            endcase
-
-            s_axi_rvalid <= 1'b1;
-        end
-        else if (s_axi_rvalid && s_axi_rready)
-        begin
-            s_axi_rdata <= 32'b0;
-            s_axi_rresp <= 2'b00;
-            s_axi_rvalid <= 1'b0;
+            // Something is going wrong...
         end
 
-        s_axi_arready <= !s_axi_rvalid;
-
-        if (!aresetn)
-        begin
-            s_axi_arready <= 1'b1;
-            s_axi_rdata <= 32'b0;
-            s_axi_rresp <= 2'b00;
-            s_axi_rvalid <= 1'b0;
-        end
-    end
-
-    reg [7:0] awaddr;
-    reg awaddr_full;
-    reg [31:0] wdata;
-    reg wdata_full;
-
-    always @(posedge aclk)
-    begin
-        // These are 1 clock "pulses"...
-        reset <= 1'b0;
-        channel_start <= 1'b0;
-
-        if (s_axi_awvalid && s_axi_awready)
-        begin
-            awaddr <= s_axi_awaddr;
-            awaddr_full <= 1'b1;
-
-            // We can't accept anything more until the write is complete.
-            s_axi_awready <= 1'b0;
-        end
-
-        if (s_axi_wvalid && s_axi_wready)
-        begin
-            wdata <= s_axi_wdata;
-            wdata_full <= 1'b1;
-
-            // We can't accept anything more until the write is complete.
-            s_axi_wready <= 1'b0;
-        end
-
-        if (awaddr_full && wdata_full)
-        begin
-            s_axi_bresp <= 2'b00;
-
-            // TODO: should consider s_axi_wstrb
-            case (awaddr)
-                REG_WRAP_TESTER_1:
-                begin
-                    wrap_tester_enable <= wdata[0];
-                    wrap_tester_driver <= wdata[31:12];
-                end
-
-                REG_CONTROL_1:
-                begin
-                    reset <= wdata[0];
-
-                    channel_enable <= wdata[1];
-                    frontend_enable <= wdata[31];
-                end
-
-                REG_CONTROL_2:
-                begin
-                    channel_addr <= wdata[31:24];
-                    channel_start <= wdata[0];
-                end
-
-                REG_CCW_1:
-                begin
-                    ccw_command <= wdata[31:24];
-                    ccw_count <= wdata[15:0];
-                end
-
-                REG_CCW_2:
-                    ccw_data_addr <= wdata;
-
-                default:
-                    s_axi_bresp <= 2'b10; // SLVERR
-            endcase
-
-            s_axi_bvalid <= 1'b1;
-
-            awaddr_full <= 1'b0;
-            wdata_full <= 1'b0;
-        end
-
-        if (s_axi_bvalid && s_axi_bready)
-        begin
-            s_axi_awready <= 1'b1;
-            s_axi_wready <= 1'b1;
-
-            s_axi_bresp <= 2'b00;
-            s_axi_bvalid <= 1'b0;
-        end
-
-        if (!aresetn)
-        begin
-            reset <= 1'b1;
-
-            channel_start <= 1'b0;
-            channel_enable <= 1'b0;
-            frontend_enable <= 1'b0;
-
-            awaddr_full <= 1'b0;
-            wdata_full <= 1'b0;
-
-            s_axi_awready <= 1'b1;
-            s_axi_wready <= 1'b1;
-            s_axi_bresp <= 2'b00;
-            s_axi_bvalid <= 1'b0;
-
-            wrap_tester_enable <= 1'b0;
-        end
-    end
-
-    always @(posedge aclk)
-    begin
-        if (channel_start)
-        begin
-            device_status <= 8'b0;
-        end
-
-        if (channel_status_tvalid)
-        begin
-            device_status <= channel_status_tdata;
-        end
-
-        if (!aresetn)
-        begin
-            device_status <= 8'b0;
-        end
-    end
-
-    reg [7:0] dma_state;
-    wire dma_busy;
-    reg [31:0] dma_addr;
-    reg dma_start;
-    wire dma_done;
-
-    axi_byte_io axi_byte_io (
-        .aclk(aclk),
-        .aresetn(aresetn),
-
-        .busy(dma_busy),
-        .write(!ccw_command[0]), // READ command WRITES, WRITE command READS...
-        .addr(dma_addr),
-        .data_read(channel_data_send_tdata),
-        .data_write(channel_data_recv_tdata),
-        .start(dma_start),
-        .done(dma_done),
-
-        .m_axi_araddr(m_axi_araddr),
-        .m_axi_arvalid(m_axi_arvalid),
-        .m_axi_arready(m_axi_arready),
-
-        .m_axi_rdata(m_axi_rdata),
-        .m_axi_rresp(m_axi_rresp),
-        .m_axi_rvalid(m_axi_rvalid),
-        .m_axi_rready(m_axi_rready),
-
-        .m_axi_awaddr(m_axi_awaddr),
-        .m_axi_awvalid(m_axi_awvalid),
-        .m_axi_awready(m_axi_awready),
-
-        .m_axi_wdata(m_axi_wdata),
-        .m_axi_wstrb(m_axi_wstrb),
-        .m_axi_wvalid(m_axi_wvalid),
-        .m_axi_wready(m_axi_wready),
-
-        .m_axi_bresp(m_axi_bresp),
-        .m_axi_bvalid(m_axi_bvalid),
-        .m_axi_bready(m_axi_bready)
-    );
-
-    always @(posedge aclk)
-    begin
-        if (channel_start)
-        begin
-            // Capture the DMA address and count from the CCW when the channel starts.
-            dma_addr <= ccw_data_addr;
-            count <= ccw_count;
-        end
-
-        channel_stop <= 1'b0;
-        dma_start <= 1'b0;
-
-        case (dma_state)
-            0:
+        case (channel_state)
+            CHANNEL_STATE_IDLE:
             begin
-                // TODO: we use TREADY to indicate that the read has been "accepted", confirm
-                // that it is okay for the slave to wait on TVALID...
-                channel_data_send_tvalid <= 1'b0;
-                channel_data_recv_tready <= 1'b0;
-
-                if ((ccw_command[0] && channel_data_send_tready)
-                    || (!ccw_command[0] && channel_data_recv_tvalid))
+                if (!channel_enable)
                 begin
-                    if (count == 0)
-                    begin
-                        channel_stop <= 1'b1;
-                    end
-                    else if (!dma_busy)
-                    begin
-                        dma_start <= 1'b1;
+                    // Nothing should be happening, the channel should be held
+                    // in system reset.
+                end
+                else if (channel_request)
+                begin
+                    channel_state <= CHANNEL_STATE_REQUEST_1;
+                end
+                else if (!device_enable)
+                begin
+                    // Nothing to do, if the CU wants something we'd answer them
+                    // above.
+                end
+                else if (status_suppressed && !status_pending)
+                begin
+                    // Unsuppress that status, with TEST
+                end
+                // else if (start_pending)
+                // begin
+                //     if (status_pending)
+                //     begin
+                //         // Reject the takeoff
+                //     end
+                //     else
+                //     begin
+                //         -> START
+                //     end
+                // end
+            end
 
-                        dma_state <= 1;
-                    end
+            // CHANNEL_START:
+            // begin
+            //     // ...
+            // end
+
+            CHANNEL_STATE_REQUEST_1:
+            begin
+                channel_in_tdata <= XXX_SELECT_REQUESTOR_XXX;
+                channel_in_tvalid <= 1;
+
+                if (channel_in_tready && channel_in_tvalid)
+                begin
+                    channel_in_tvalid <= 0;
+
+                    channel_state <= CHANNEL_STATE_REQUEST_2;
                 end
             end
 
-            1: // wait on DMA completion
+            CHANNEL_STATE_REQUEST_2:
             begin
-                if (dma_done)
+                channel_out_tready <= 1;
+
+                if (channel_out_tready && channel_out_tvalid)
                 begin
-                    // let the channel know using TVALID or TREADY depending on direction
-                    if (ccw_command[0])
-                        channel_data_send_tvalid <= 1'b1;
+                    channel_out_tready <= 0;
+
+                    if (channel_out_tdata = 24'h000000)
+                    begin
+                        // The requestor did not respond.
+                        channel_state <= CHANNEL_STATE_IDLE;
+                    end
+                    else if (channel_out_tdata[19:16] == XXX_CONNECTED_XXX)
+                    begin
+                        channel_state <= CHANNEL_STATE_CONNECTED;
+                    end
                     else
-                        channel_data_recv_tready <= 1'b1;
-
-                    dma_state <= 2;
+                    begin
+                        channel_state <= CHANNEL_STATE_TODO;
+                    end
                 end
             end
 
-            2: // wait on channel completion
+            CHANNEL_STATE_CONNECTED:
             begin
-                if ((ccw_command[0] && channel_data_send_tvalid && channel_data_send_tready)
-                    || (!ccw_command[0] && channel_data_recv_tvalid && channel_data_recv_tready))
+                channel_out_tready <= 1;
+
+                // TODO: channel_burst <= no contention, probably
+
+                // TODO: !device_enable handling here is probably a little more
+                // complex than outlined... this works for the simple case where
+                // a device is enabled or disabled outside of a channel
+                // initiated operation.
+
+                if (channel_out_tready && channel_out_tvalid)
                 begin
-                    // Deassert these immediately...
-                    channel_data_send_tvalid <= 1'b0;
-                    channel_data_recv_tready <= 1'b0;
+                    channel_out_tready <= 0;
 
-                    count <= count - 1;
-                    dma_addr <= dma_addr + 1;
+                    if (channel_out_tdata[19:16] == XXX_STATUS_XXX) // Status
+                    begin
+                        if (!channel_out_tdata[20])
+                        begin
+                            // Invalid parity...
+                            channel_state <= CHANNEL_STATE_TODO;
+                        end
+                        else if (channel_out_tdata[15:8] == device_address && device_enabled && !status_pending)
+                        begin
+                            // Ok, we can accept the status...
+                            status <= channel_out_tdata[7:0];
+                            status_pending <= 1;
+                            status_stacked <= 0;
+                            status_suppressed <= 0;
 
-                    dma_state <= 0;
+                            channel_state <= CHANNEL_STATE_ACCEPT_STATUS_1;
+                        end
+                        else
+                        begin
+                            // We gotta suppress that status.
+                            status_suppressed <= 1;
+
+                            channel_state <= CHANNEL_STATE_SUPPRESS_STATUS_1;
+                        end
+                    end
+                    // else if (channel_out_tdata[19:16] == 4'h2) // Data Service
+                    // begin
+                    //     // ...
+                    // end
+                    else
+                    begin
+                        channel_state <= CHANNEL_STATE_TODO;
+                    end
+                end
+                else if (!channel_connected)
+                begin
+                    channel_state <= CHANNEL_STATE_IDLE;
+                end
+            end
+
+            CHANNEL_STATE_ACCEPT_STATUS_1:
+            begin
+                channel_in_tdata <= XXX_ACCEPT_STATUS_XXX;
+                channel_in_tvalid <= 1;
+
+                if (channel_in_tready && channel_in_tvalid)
+                begin
+                    channel_in_tvalid <= 0;
+
+                    channel_state <= CHANNEL_STATE_ACCEPT_STATUS_2;
+                end
+            end
+
+            CHANNEL_STATE_ACCEPT_STATUS_2:
+            begin
+                channel_out_tready <= 1;
+
+                if (channel_out_tready && channel_out_tvalid)
+                begin
+                    channel_out_tready <= 0;
+
+                    TODO
+                end
+            end
+
+            CHANNEL_STATE_SUPPRESS_STATUS_1:
+            begin
+                channel_in_tdata <= XXX_SUPPRESS_STATUS_XXX;
+                channel_in_tvalid <= 1;
+
+                if (channel_in_tready && channel_in_tvalid)
+                begin
+                    channel_in_tvalid <= 0;
+
+                    channel_state <= CHANNEL_STATE_SUPPRESS_STATUS_2;
+                end
+            end
+
+            CHANNEL_STATE_SUPPRESS_STATUS_2:
+            begin
+                channel_out_tready <= 1;
+
+                if (channel_out_tready && channel_out_tvalid)
+                begin
+                    channel_out_tready <= 0;
+
+                    TODO
                 end
             end
         endcase
-
-        if (!aresetn)
-        begin
-            channel_data_send_tvalid <= 1'b0;
-            channel_data_recv_tready <= 1'b0;
-
-            dma_state <= 0;
-        end
     end
 endmodule
