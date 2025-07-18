@@ -94,9 +94,11 @@ module axi_mm_channel_out (
 
     output wire debug
 );
+    parameter CLOCKS_PER_100_NS = 5; // 50 MHz clock period is 20 ns
+
     reg channel_enable = 0;
 
-    reg [7:0] address;
+    reg [7:0] device_address;
     reg device_enable;
     reg [7:0] status;
     reg status_pending;
@@ -119,7 +121,7 @@ module axi_mm_channel_out (
     //           | NNNN NNNN | NNNN NNNN | CCCC CCCC
     //           |           | SSSS SSSS |       RTP <- Supr... / Stack... / Pending
     //
-    always @(posedge clk)
+    always @(posedge aclk)
     begin
         // ...
 
@@ -139,46 +141,67 @@ module axi_mm_channel_out (
     end
 
     // The channel side of things...
+    reg [7:0] channel_state;
+
+    localparam CHANNEL_STATE_IDLE = 0;
+    // CHANNEL_START
+    localparam CHANNEL_STATE_REQUEST_1 = 1;
+    localparam CHANNEL_STATE_REQUEST_2 = 2;
+    localparam CHANNEL_STATE_CONNECTED = 3;
+    localparam CHANNEL_STATE_ACCEPT_STATUS_1 = 4;
+    localparam CHANNEL_STATE_ACCEPT_STATUS_2 = 5;
+    localparam CHANNEL_STATE_STACK_STATUS_1 = 6;
+    localparam CHANNEL_STATE_STACK_STATUS_2 = 7;
+    localparam CHANNEL_STATE_TODO = 8;
+
+    reg [23:0] channel_in_tdata;
+    reg channel_in_tvalid;
+    wire channel_in_tready;
+
+    wire [23:0] channel_out_tdata;
+    wire channel_out_tvalid;
+    reg channel_out_tready;
+
     reg channel_burst = 0;
     wire channel_connected;
     wire channel_request;
-    wire [7:0] channel_error;
+    wire [15:0] channel_error;
 
     channel_out_protocol #(
-        // ...
+        .CLOCKS_PER_100_NS(CLOCKS_PER_100_NS)
     ) protocol (
         .clk(aclk),
         .reset(!channel_enable),
 
-        .in_tdata(),
-        .in_tvalid(),
-        .in_tready(),
+        .in_tdata(channel_in_tdata),
+        .in_tvalid(channel_in_tvalid),
+        .in_tready(channel_in_tready),
 
-        .out_tdata(),
-        .out_tvalid(),
-        .out_tready(),
+        .out_tdata(channel_out_tdata),
+        .out_tvalid(channel_out_tvalid),
+        .out_tready(channel_out_tready),
 
         .burst(channel_burst),
         .connected(channel_connected),
         .request(channel_request),
         .error(channel_error),
 
-        .a_operational_out(),
-        .a_request_in(),
-        .a_hold_out(),
-        .a_select_out(),
-        .a_select_in(),
-        .a_address_out(),
-        .a_operational_in(),
-        .a_address_in(),
-        .a_command_out(),
-        .a_status_in(),
-        .a_service_in(),
-        .a_service_out(),
-        .a_suppress_out()
+        .a_operational_out(a_operational_out),
+        .a_request_in(a_request_in),
+        .a_hold_out(a_hold_out),
+        .a_select_out(a_select_out),
+        .a_select_in(a_select_in),
+        .a_address_out(a_address_out),
+        .a_operational_in(a_operational_in),
+        .a_address_in(a_address_in),
+        .a_command_out(a_command_out),
+        .a_status_in(a_status_in),
+        .a_service_in(a_service_in),
+        .a_service_out(a_service_out),
+        .a_suppress_out(a_suppress_out)
     );
 
-    always @(posedge clk)
+    always @(posedge aclk)
     begin
         channel_in_tvalid <= 0;
         channel_out_tready <= 0;
@@ -229,7 +252,7 @@ module axi_mm_channel_out (
 
             CHANNEL_STATE_REQUEST_1:
             begin
-                channel_in_tdata <= XXX_SELECT_REQUESTOR_XXX;
+                channel_in_tdata <= 24'h010000; // XXX - Select Requestor
                 channel_in_tvalid <= 1;
 
                 if (channel_in_tready && channel_in_tvalid)
@@ -248,12 +271,12 @@ module axi_mm_channel_out (
                 begin
                     channel_out_tready <= 0;
 
-                    if (channel_out_tdata = 24'h000000)
+                    if (channel_out_tdata == 24'h000000)
                     begin
                         // The requestor did not respond.
                         channel_state <= CHANNEL_STATE_IDLE;
                     end
-                    else if (channel_out_tdata[19:16] == XXX_CONNECTED_XXX)
+                    else if (channel_out_tdata[19:16] == 4'h3) // XXX - Connected
                     begin
                         channel_state <= CHANNEL_STATE_CONNECTED;
                     end
@@ -279,14 +302,14 @@ module axi_mm_channel_out (
                 begin
                     channel_out_tready <= 0;
 
-                    if (channel_out_tdata[19:16] == XXX_STATUS_XXX) // Status
+                    if (channel_out_tdata[19:16] == 4'h1) // XXX - Status
                     begin
                         if (!channel_out_tdata[20])
                         begin
                             // Invalid parity...
                             channel_state <= CHANNEL_STATE_TODO;
                         end
-                        else if (channel_out_tdata[15:8] == device_address && device_enabled && !status_pending)
+                        else if (channel_out_tdata[15:8] == device_address && device_enable && !status_pending)
                         begin
                             // Ok, we can accept the status...
                             status <= channel_out_tdata[7:0];
@@ -298,10 +321,10 @@ module axi_mm_channel_out (
                         end
                         else
                         begin
-                            // We gotta suppress that status.
-                            status_suppressed <= 1;
+                            // We gotta stack that status.
+                            status_stacked <= 1;
 
-                            channel_state <= CHANNEL_STATE_SUPPRESS_STATUS_1;
+                            channel_state <= CHANNEL_STATE_STACK_STATUS_1;
                         end
                     end
                     // else if (channel_out_tdata[19:16] == 4'h2) // Data Service
@@ -321,7 +344,7 @@ module axi_mm_channel_out (
 
             CHANNEL_STATE_ACCEPT_STATUS_1:
             begin
-                channel_in_tdata <= XXX_ACCEPT_STATUS_XXX;
+                channel_in_tdata <= 24'h020000; // XXX - Accept Status
                 channel_in_tvalid <= 1;
 
                 if (channel_in_tready && channel_in_tvalid)
@@ -340,24 +363,25 @@ module axi_mm_channel_out (
                 begin
                     channel_out_tready <= 0;
 
-                    TODO
+                    $display("TODO");
+                    $finish;
                 end
             end
 
-            CHANNEL_STATE_SUPPRESS_STATUS_1:
+            CHANNEL_STATE_STACK_STATUS_1:
             begin
-                channel_in_tdata <= XXX_SUPPRESS_STATUS_XXX;
+                channel_in_tdata <= 24'h030000; // XXX - Stack Status
                 channel_in_tvalid <= 1;
 
                 if (channel_in_tready && channel_in_tvalid)
                 begin
                     channel_in_tvalid <= 0;
 
-                    channel_state <= CHANNEL_STATE_SUPPRESS_STATUS_2;
+                    channel_state <= CHANNEL_STATE_STACK_STATUS_2;
                 end
             end
 
-            CHANNEL_STATE_SUPPRESS_STATUS_2:
+            CHANNEL_STATE_STACK_STATUS_2:
             begin
                 channel_out_tready <= 1;
 
@@ -365,9 +389,21 @@ module axi_mm_channel_out (
                 begin
                     channel_out_tready <= 0;
 
-                    TODO
+                    $display("TODO");
+                    $finish;
                 end
             end
+
+            CHANNEL_STATE_TODO:
+            begin
+                $display("TODO");
+                $finish;
+            end
         endcase
+
+        if (!aresetn)
+        begin
+            channel_state <= CHANNEL_STATE_IDLE;
+        end
     end
 endmodule
