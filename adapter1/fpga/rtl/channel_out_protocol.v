@@ -110,35 +110,36 @@ module channel_out_protocol (
     localparam STATE_IDLE = 1;
     localparam STATE_CONNECTED = 2;
     localparam STATE_WAIT = 3;
-    localparam STATE_ERROR = 100;
-    localparam STATE_INITIAL_SELECTION_1 = 4;
-    localparam STATE_INITIAL_SELECTION_2 = 5;
-    localparam STATE_INITIAL_SELECTION_3 = 6;
-    localparam STATE_INITIAL_SELECTION_4 = 7;
-    localparam STATE_INITIAL_SELECTION_5 = 8;
-    localparam STATE_INITIAL_SELECTION_6 = 9;
-    localparam STATE_INITIAL_SELECTION_7 = 10;
-    localparam STATE_INITIAL_SELECTION_8 = 11;
-    localparam STATE_INITIAL_SELECTION_9 = 12;
-    localparam STATE_INITIAL_SELECTION_10 = 13;
-    localparam STATE_INITIAL_SELECTION_11 = 14;
-    localparam STATE_INITIAL_SELECTION_12 = 15;
-    localparam STATE_INITIAL_SELECTION_13 = 16;
-    localparam STATE_INITIAL_SELECTION_14 = 17;
-    localparam STATE_INITIAL_SELECTION_15 = 18;
-    localparam STATE_INITIAL_SELECTION_16 = 19;
-    localparam STATE_DATA_TRANSFER_1 = 20;
-    localparam STATE_DATA_TRANSFER_2 = 21;
-    localparam STATE_DATA_TRANSFER_3 = 22;
-    localparam STATE_DATA_TRANSFER_4 = 23;
-    localparam STATE_DATA_TRANSFER_5 = 24;
-    localparam STATE_DATA_TRANSFER_6 = 25;
-    localparam STATE_DATA_TRANSFER_7 = 26;
-    localparam STATE_ENDING_1 = 27;
-    localparam STATE_ENDING_2 = 28;
-    localparam STATE_ENDING_3 = 29;
-    localparam STATE_ENDING_4 = 30;
-    localparam STATE_ENDING_5 = 31;
+    localparam STATE_ERROR = 4;
+    localparam STATE_INITIAL_SELECTION_1 = 5;
+    localparam STATE_INITIAL_SELECTION_2 = 6;
+    localparam STATE_INITIAL_SELECTION_3 = 7;
+    localparam STATE_INITIAL_SELECTION_4 = 8;
+    localparam STATE_INITIAL_SELECTION_5 = 9;
+    localparam STATE_INITIAL_SELECTION_6 = 10;
+    localparam STATE_INITIAL_SELECTION_7 = 11;
+    localparam STATE_INITIAL_SELECTION_8 = 12;
+    localparam STATE_INITIAL_SELECTION_9 = 13;
+    localparam STATE_INITIAL_SELECTION_10 = 14;
+    localparam STATE_INITIAL_SELECTION_11 = 15;
+    localparam STATE_INITIAL_SELECTION_12 = 16;
+    localparam STATE_INITIAL_SELECTION_13 = 17;
+    localparam STATE_INITIAL_SELECTION_14 = 18;
+    localparam STATE_INITIAL_SELECTION_15 = 19;
+    localparam STATE_INITIAL_SELECTION_16 = 20;
+    localparam STATE_DATA_TRANSFER_1 = 21;
+    localparam STATE_DATA_TRANSFER_2 = 22;
+    localparam STATE_DATA_TRANSFER_3 = 23;
+    localparam STATE_DATA_TRANSFER_4 = 24;
+    localparam STATE_DATA_TRANSFER_5 = 25;
+    localparam STATE_DATA_TRANSFER_6 = 26;
+    localparam STATE_DATA_TRANSFER_7 = 27;
+    localparam STATE_ENDING_1 = 28;
+    localparam STATE_ENDING_2 = 29;
+    localparam STATE_ENDING_3 = 30;
+    localparam STATE_ENDING_4 = 31;
+    localparam STATE_ENDING_5 = 32;
+    localparam STATE_ENDING_6 = 33;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
@@ -1063,6 +1064,11 @@ module channel_out_protocol (
                             next_state = STATE_ENDING_5;
                         end
 
+                        8'h03: // Stack Status
+                        begin
+                            next_state = STATE_ENDING_6;
+                        end
+
                         default:
                         begin
                             next_out_tdata = out_error(ERROR_INVALID_IN);
@@ -1080,6 +1086,31 @@ module channel_out_protocol (
                 next_hold_out = burst && burst_valid;
                 next_select_out = burst && burst_valid;
                 next_service_out = 1;
+
+                next_connected = 1;
+
+                if (!operational_in_violation && !a_select_in && !a_address_in && !a_service_in)
+                begin
+                    if (!a_status_in)
+                    begin
+                        next_out_tdata = 24'b0;
+                        next_out_tvalid = 1;
+
+                        next_state = STATE_WAIT;
+                    end
+                end
+                else
+                begin
+                    protocol_violation;
+                end
+            end
+
+            STATE_ENDING_6:
+            begin
+                next_operational_out = 1;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
+                next_command_out = 1;
 
                 next_connected = 1;
 
