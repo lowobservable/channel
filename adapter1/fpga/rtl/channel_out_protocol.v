@@ -61,6 +61,16 @@ module channel_out_protocol (
     output reg connected,
     output wire request,
 
+    // TODO: Ideally all errors could be reported through the AXI stream,
+    // however that may require deferring errors while waiting on the driver to
+    // receive a pending response or event. It's not clear to what extent an
+    // error might be recoverable or what actions this module can, or should,
+    // take to recover.
+    //
+    // NOTE: For now, errors will be reported immediately and the driver should
+    // reset this module to recover.
+    output reg [15:0] error,
+
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
     input wire a_bus_in_parity,
@@ -93,8 +103,6 @@ module channel_out_protocol (
 
     localparam ERROR_INVALID_IN = 8'h01;
     localparam ERROR_ADDRESS_NOT_OPERATIONAL = 8'h02;
-    localparam ERROR_TAGS = 8'h03; // Protocol violations...
-    localparam ERROR_PARITY = 8'h04;
     localparam ERROR_INITIAL_SELECTION_ADDRESS_MISMATCH = 8'h06;
     localparam ERROR_TIMEOUT = 8'hff;
 
@@ -102,34 +110,36 @@ module channel_out_protocol (
     localparam STATE_IDLE = 1;
     localparam STATE_CONNECTED = 2;
     localparam STATE_WAIT = 3;
-    localparam STATE_INITIAL_SELECTION_1 = 4;
-    localparam STATE_INITIAL_SELECTION_2 = 5;
-    localparam STATE_INITIAL_SELECTION_3 = 6;
-    localparam STATE_INITIAL_SELECTION_4 = 7;
-    localparam STATE_INITIAL_SELECTION_5 = 8;
-    localparam STATE_INITIAL_SELECTION_6 = 9;
-    localparam STATE_INITIAL_SELECTION_7 = 10;
-    localparam STATE_INITIAL_SELECTION_8 = 11;
-    localparam STATE_INITIAL_SELECTION_9 = 12;
-    localparam STATE_INITIAL_SELECTION_10 = 13;
-    localparam STATE_INITIAL_SELECTION_11 = 14;
-    localparam STATE_INITIAL_SELECTION_12 = 15;
-    localparam STATE_INITIAL_SELECTION_13 = 16;
-    localparam STATE_INITIAL_SELECTION_14 = 17;
-    localparam STATE_INITIAL_SELECTION_15 = 18;
-    localparam STATE_INITIAL_SELECTION_16 = 19;
-    localparam STATE_DATA_TRANSFER_1 = 20;
-    localparam STATE_DATA_TRANSFER_2 = 21;
-    localparam STATE_DATA_TRANSFER_3 = 22;
-    localparam STATE_DATA_TRANSFER_4 = 23;
-    localparam STATE_DATA_TRANSFER_5 = 24;
-    localparam STATE_DATA_TRANSFER_6 = 25;
-    localparam STATE_DATA_TRANSFER_7 = 26;
-    localparam STATE_ENDING_1 = 27;
-    localparam STATE_ENDING_2 = 28;
-    localparam STATE_ENDING_3 = 29;
-    localparam STATE_ENDING_4 = 30;
-    localparam STATE_ENDING_5 = 31;
+    localparam STATE_ERROR = 4;
+    localparam STATE_INITIAL_SELECTION_1 = 5;
+    localparam STATE_INITIAL_SELECTION_2 = 6;
+    localparam STATE_INITIAL_SELECTION_3 = 7;
+    localparam STATE_INITIAL_SELECTION_4 = 8;
+    localparam STATE_INITIAL_SELECTION_5 = 9;
+    localparam STATE_INITIAL_SELECTION_6 = 10;
+    localparam STATE_INITIAL_SELECTION_7 = 11;
+    localparam STATE_INITIAL_SELECTION_8 = 12;
+    localparam STATE_INITIAL_SELECTION_9 = 13;
+    localparam STATE_INITIAL_SELECTION_10 = 14;
+    localparam STATE_INITIAL_SELECTION_11 = 15;
+    localparam STATE_INITIAL_SELECTION_12 = 16;
+    localparam STATE_INITIAL_SELECTION_13 = 17;
+    localparam STATE_INITIAL_SELECTION_14 = 18;
+    localparam STATE_INITIAL_SELECTION_15 = 19;
+    localparam STATE_INITIAL_SELECTION_16 = 20;
+    localparam STATE_DATA_TRANSFER_1 = 21;
+    localparam STATE_DATA_TRANSFER_2 = 22;
+    localparam STATE_DATA_TRANSFER_3 = 23;
+    localparam STATE_DATA_TRANSFER_4 = 24;
+    localparam STATE_DATA_TRANSFER_5 = 25;
+    localparam STATE_DATA_TRANSFER_6 = 26;
+    localparam STATE_DATA_TRANSFER_7 = 27;
+    localparam STATE_ENDING_1 = 28;
+    localparam STATE_ENDING_2 = 29;
+    localparam STATE_ENDING_3 = 30;
+    localparam STATE_ENDING_4 = 31;
+    localparam STATE_ENDING_5 = 32;
+    localparam STATE_ENDING_6 = 33;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
@@ -147,6 +157,7 @@ module channel_out_protocol (
     reg [7:0] data;
     reg [7:0] next_data;
     reg next_connected;
+    reg [15:0] next_error;
 
     assign request = a_request_in;
 
@@ -222,6 +233,7 @@ module channel_out_protocol (
         next_command = command;
         next_data = data;
         next_connected = 0;
+        next_error = error;
 
         // Leave bus out low when idle to reduce driver current.
         //
@@ -362,6 +374,11 @@ module channel_out_protocol (
                 end
             end
 
+            STATE_ERROR:
+            begin
+                // Nothing to do, for now...
+            end
+
             STATE_INITIAL_SELECTION_1:
             begin
                 next_bus_out = address;
@@ -382,7 +399,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -402,7 +419,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -425,7 +442,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -470,7 +487,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -491,7 +508,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -512,7 +529,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -528,7 +545,7 @@ module channel_out_protocol (
                 begin
                     if (!bus_in_parity_valid)
                     begin
-                        error_parity;
+                        protocol_violation;
                     end
                     else if (a_bus_in == address)
                     begin
@@ -546,7 +563,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -576,7 +593,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -599,7 +616,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -620,7 +637,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -641,7 +658,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -661,7 +678,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -697,7 +714,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -719,7 +736,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -748,7 +765,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -773,7 +790,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -796,7 +813,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -821,7 +838,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -908,7 +925,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -934,7 +951,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -959,7 +976,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -980,7 +997,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -1001,7 +1018,7 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
                 end
             end
 
@@ -1047,6 +1064,11 @@ module channel_out_protocol (
                             next_state = STATE_ENDING_5;
                         end
 
+                        8'h03: // Stack Status
+                        begin
+                            next_state = STATE_ENDING_6;
+                        end
+
                         default:
                         begin
                             next_out_tdata = out_error(ERROR_INVALID_IN);
@@ -1079,7 +1101,32 @@ module channel_out_protocol (
                 end
                 else
                 begin
-                    error_tags;
+                    protocol_violation;
+                end
+            end
+
+            STATE_ENDING_6:
+            begin
+                next_operational_out = 1;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
+                next_command_out = 1;
+
+                next_connected = 1;
+
+                if (!operational_in_violation && !a_select_in && !a_address_in && !a_service_in)
+                begin
+                    if (!a_status_in)
+                    begin
+                        next_out_tdata = 24'b0;
+                        next_out_tvalid = 1;
+
+                        next_state = STATE_WAIT;
+                    end
+                end
+                else
+                begin
+                    protocol_violation;
                 end
             end
         endcase
@@ -1107,6 +1154,7 @@ module channel_out_protocol (
         command <= next_command;
         data <= next_data;
         connected <= next_connected;
+        error <= next_error;
 
         a_bus_out <= next_bus_out;
         a_bus_out_parity <= ~^next_bus_out; // Odd parity
@@ -1125,8 +1173,35 @@ module channel_out_protocol (
 
             in_tready <= 0;
             out_tvalid <= 0;
+
+            error <= 16'b0;
         end
     end
+
+    task protocol_violation;
+    begin
+        next_error = {
+            a_operational_out,
+            a_request_in,
+            a_hold_out,
+            a_select_out,
+            a_select_in,
+            a_address_out,
+            a_operational_in,
+            a_address_in,
+            a_command_out,
+            a_status_in,
+            a_service_in,
+            a_service_out,
+            a_suppress_out,
+            operational_in_violation,
+            bus_in_parity_valid,
+            1'b1
+        };
+
+        next_state = STATE_ERROR;
+    end
+    endtask
 
     function [23:0] out_status (
         input [7:0] status,
@@ -1146,22 +1221,4 @@ module channel_out_protocol (
         out_error = { 8'hff, code, state };
     end
     endfunction
-
-    task error_tags;
-    begin
-        next_out_tdata = { 8'hff, ERROR_TAGS, { a_operational_in, a_select_in, a_request_in, 2'b0, a_address_in, a_status_in, a_service_in } };
-        next_out_tvalid = 1;
-
-        next_state = STATE_WAIT;
-    end
-    endtask
-
-    task error_parity;
-    begin
-        next_out_tdata = { 8'hff, ERROR_PARITY, 8'h00 };
-        next_out_tvalid = 1;
-
-        next_state = STATE_WAIT;
-    end
-    endtask
 endmodule
