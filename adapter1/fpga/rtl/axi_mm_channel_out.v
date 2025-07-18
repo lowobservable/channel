@@ -96,6 +96,14 @@ module axi_mm_channel_out (
 );
     parameter CLOCKS_PER_100_NS = 5; // 50 MHz clock period is 20 ns
 
+    localparam REG_CHANNEL_1 = 8'h00;
+    localparam REG_WRAP_TESTER_1 = 8'h04;
+    localparam REG_WRAP_TESTER_2 = 8'h08;
+    localparam REG_DEVICE_1 = 8'h0c;
+    localparam REG_DEVICE_2 = 8'h10;
+    localparam REG_DEVICE_3 = 8'h14;
+    localparam REG_DEVICE_4 = 8'h18;
+
     reg channel_enable = 0;
 
     reg [7:0] device_address;
@@ -121,10 +129,83 @@ module axi_mm_channel_out (
     //           | NNNN NNNN | NNNN NNNN | CCCC CCCC
     //           |           | SSSS SSSS |       RTP <- Supr... / Stack... / Pending
     //
+    reg prev_s_axi_rready_valid;
+
     always @(posedge aclk)
     begin
-        // ...
+        // TODO: Without a buffer, we cannot accept a read with a response
+        // pending.
+        s_axi_arready <= !s_axi_rvalid;
 
+        prev_s_axi_rready_valid <= 0;
+
+        if (s_axi_arvalid && s_axi_arready)
+        begin
+            s_axi_arready <= 0;
+
+            s_axi_rresp <= 2'b00;
+
+            case (s_axi_araddr)
+                REG_CHANNEL_1:
+                begin
+                    s_axi_rdata <= { 30'b0, frontend_enable, channel_enable };
+                end
+
+                REG_WRAP_TESTER_1:
+                begin
+                    s_axi_rdata <= { wrap_tester_driver, 11'b0, wrap_tester_enable };
+                end
+
+                REG_WRAP_TESTER_2:
+                begin
+                    s_axi_rdata <= { wrap_tester_receiver, 12'b0 };
+                end
+
+                REG_DEVICE_1:
+                begin
+                    s_axi_rdata <= { device_address, 23'b0, device_enable };
+                end
+
+                REG_DEVICE_2:
+                begin
+                    s_axi_rdata <= { 31'b0, start_pending };
+                end
+
+                REG_DEVICE_3:
+                begin
+                    s_axi_rdata <= { 8'b0, count, command };
+                end
+
+                REG_DEVICE_4:
+                begin
+                    s_axi_rdata <= { 16'b0, status, 5'b0, status_suppressed, status_stacked, status_pending };
+                end
+
+                default:
+                begin
+                    s_axi_rresp <= 2'b10; // SLVERR
+                end
+            endcase
+
+            s_axi_rvalid <= 1;
+            prev_s_axi_rready_valid <= s_axi_rready;
+        end
+
+        if ((s_axi_rvalid && s_axi_rready) || prev_s_axi_rready_valid)
+        begin
+            s_axi_rvalid <= 0;
+            s_axi_arready <= 1;
+        end
+
+        if (!aresetn)
+        begin
+            s_axi_arready <= 0;
+            s_axi_rvalid <= 0;
+        end
+    end
+
+    always @(posedge aclk)
+    begin
         if (!aresetn)
         begin
             channel_enable <= 0;

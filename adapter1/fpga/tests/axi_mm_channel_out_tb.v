@@ -9,6 +9,10 @@ module axi_mm_channel_out_tb;
 
     reg channel_reset = 1;
 
+    reg channel_araddr;
+    reg channel_arvalid;
+    reg channel_rready;
+
     wire [7:0] bus_in;
     wire bus_in_parity;
     wire [7:0] bus_out;
@@ -32,6 +36,10 @@ module axi_mm_channel_out_tb;
     ) channel (
         .aclk(clk),
         .aresetn(!channel_reset),
+
+        .s_axi_araddr(channel_araddr),
+        .s_axi_arvalid(channel_arvalid),
+        .s_axi_rready(channel_rready),
 
         // ...
 
@@ -119,8 +127,86 @@ module axi_mm_channel_out_tb;
         $dumpfile("axi_mm_channel_out_tb.vcd");
         $dumpvars(0, axi_mm_channel_out_tb);
 
-        #200;
+        test_read_register;
 
         $finish;
     end
+
+    task test_read_register;
+        reg [31:0] reg_data;
+    begin
+        $display("START: test_read_register");
+
+        reset;
+
+        read_reg(channel.REG_CHANNEL_1, reg_data);
+
+        #100;
+
+        `assert_equal(reg_data, 32'b0, "register should be zero");
+
+        $display("END: test_read_register");
+    end
+    endtask
+
+    task reset;
+    begin
+        @(posedge clk)
+        begin
+            channel_reset = 1;
+        end
+
+        @(posedge clk)
+        begin
+            channel_reset = 0;
+        end
+
+        @(posedge channel.s_axi_arready);
+    end
+    endtask
+
+    task read_reg (
+        input [7:0] addr,
+        output [31:0] data
+    );
+    begin
+        @(posedge clk)
+        begin
+            channel_araddr = addr;
+            channel_arvalid = 1;
+
+            channel_rready = 1;
+        end
+
+        while (channel_arvalid)
+        begin
+            @(posedge clk)
+            begin
+                if (channel.s_axi_arready)
+                begin
+                    channel_arvalid = 0;
+                end
+            end
+        end
+
+        while (channel_rready)
+        begin
+            @(posedge clk)
+            begin
+                if (channel.s_axi_rvalid)
+                begin
+                    if (channel.s_axi_rresp != 2'b00)
+                    begin
+                        $display("Register read error: %h", channel.s_axi_rresp);
+                        $finish;
+                    end
+
+                    data = channel.s_axi_rdata;
+
+                    channel_rready = 0;
+                end
+            end
+        end
+    end
+    endtask
 endmodule
