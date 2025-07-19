@@ -9,10 +9,6 @@ module axi_mm_channel_out_tb;
 
     reg channel_reset = 1;
 
-    reg channel_araddr;
-    reg channel_arvalid;
-    reg channel_rready;
-
     wire [7:0] bus_in;
     wire bus_in_parity;
     wire [7:0] bus_out;
@@ -37,11 +33,27 @@ module axi_mm_channel_out_tb;
         .aclk(clk),
         .aresetn(!channel_reset),
 
-        .s_axi_araddr(channel_araddr),
-        .s_axi_arvalid(channel_arvalid),
-        .s_axi_rready(channel_rready),
+        .s_axi_araddr(master_bfm.m_axi_araddr),
+        .s_axi_arvalid(master_bfm.m_axi_arvalid),
+        //.s_axi_arready(),
 
-        // ...
+        //.s_axi_rdata(),
+        //.s_axi_rresp(),
+        //.s_axi_rvalid(),
+        .s_axi_rready(master_bfm.m_axi_rready),
+
+        .s_axi_awaddr(master_bfm.m_axi_awaddr),
+        .s_axi_awvalid(master_bfm.m_axi_awvalid),
+        //.s_axi_awready(),
+
+        .s_axi_wdata(master_bfm.m_axi_wdata),
+        .s_axi_wstrb(master_bfm.m_axi_wstrb),
+        .s_axi_wvalid(master_bfm.m_axi_wvalid),
+        //.s_axi_wready(),
+
+        //.s_axi_bresp(),
+        //.s_axi_bvalid(),
+        .s_axi_bready(master_bfm.m_axi_bready),
 
         .a_bus_in(bus_in),
         .a_bus_in_parity(bus_in_parity),
@@ -60,6 +72,33 @@ module axi_mm_channel_out_tb;
         .a_service_in(service_in),
         .a_service_out(service_out),
         .a_suppress_out(suppress_out)
+    );
+
+    axil_master_bfm master_bfm (
+        .aclk(clk),
+        .aresetn(!channel_reset),
+
+        //.m_axi_araddr(),
+        //.m_axi_arvalid(),
+        .m_axi_arready(channel.s_axi_arready),
+
+        .m_axi_rdata(channel.s_axi_rdata),
+        .m_axi_rresp(channel.s_axi_rresp),
+        .m_axi_rvalid(channel.s_axi_rvalid),
+        //.m_axi_rready(),
+
+        //.m_axi_awaddr(),
+        //.m_axi_awvalid(),
+        .m_axi_awready(channel.s_axi_awready),
+
+        //.m_axi_wdata(),
+        //.m_axi_wstrb(),
+        //.m_axi_wvalid(),
+        .m_axi_wready(channel.s_axi_wready),
+
+        .m_axi_bresp(channel.s_axi_bresp),
+        .m_axi_bvalid(channel.s_axi_bvalid)
+        //.m_axi_bready()
     );
 
     wire terminator;
@@ -127,25 +166,70 @@ module axi_mm_channel_out_tb;
         $dumpfile("axi_mm_channel_out_tb.vcd");
         $dumpvars(0, axi_mm_channel_out_tb);
 
-        test_read_register;
+        //test_read_register;
+        //test_write_register;
+
+        test_enable_disable_channel;
 
         $finish;
     end
 
     task test_read_register;
-        reg [31:0] reg_data;
+        reg [31:0] data;
+        reg [1:0] resp;
     begin
         $display("START: test_read_register");
 
         reset;
 
-        read_reg(channel.REG_CHANNEL_1, reg_data);
+        master_bfm.read(channel.REG_CHANNEL_1, data, resp);
 
-        #100;
-
-        `assert_equal(reg_data, 32'b0, "register should be zero");
+        `assert_equal(resp, 2'b00, "read should be successful");
+        `assert_equal(data, 32'b0, "register should be zero");
 
         $display("END: test_read_register");
+    end
+    endtask
+
+    task test_write_register;
+        reg [1:0] resp;
+    begin
+        $display("START: test_write_register");
+
+        reset;
+
+        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        $display("END: test_write_register");
+    end
+    endtask
+
+    task test_enable_disable_channel;
+        reg [1:0] resp;
+    begin
+        $display("START: test_enable_disable_channel");
+
+        reset;
+
+        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        wait(channel.channel_enable);
+        wait(channel.a_operational_out);
+
+        repeat(10) @(posedge clk);
+
+        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        wait(!channel.channel_enable);
+        wait(!channel.a_operational_out);
+
+        $display("END: test_enable_disable_channel");
     end
     endtask
 
@@ -162,51 +246,6 @@ module axi_mm_channel_out_tb;
         end
 
         @(posedge channel.s_axi_arready);
-    end
-    endtask
-
-    task read_reg (
-        input [7:0] addr,
-        output [31:0] data
-    );
-    begin
-        @(posedge clk)
-        begin
-            channel_araddr = addr;
-            channel_arvalid = 1;
-
-            channel_rready = 1;
-        end
-
-        while (channel_arvalid)
-        begin
-            @(posedge clk)
-            begin
-                if (channel.s_axi_arready)
-                begin
-                    channel_arvalid = 0;
-                end
-            end
-        end
-
-        while (channel_rready)
-        begin
-            @(posedge clk)
-            begin
-                if (channel.s_axi_rvalid)
-                begin
-                    if (channel.s_axi_rresp != 2'b00)
-                    begin
-                        $display("Register read error: %h", channel.s_axi_rresp);
-                        $finish;
-                    end
-
-                    data = channel.s_axi_rdata;
-
-                    channel_rready = 0;
-                end
-            end
-        end
     end
     endtask
 endmodule

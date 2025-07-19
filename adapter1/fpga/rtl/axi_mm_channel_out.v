@@ -33,9 +33,7 @@ module axi_mm_channel_out (
     output reg s_axi_awready,
 
     input wire [31:0] s_axi_wdata,
-    // verilator lint_off UNUSEDSIGNAL
     input wire [3:0] s_axi_wstrb,
-    // verilator lint_on UNUSEDSIGNAL
     input wire s_axi_wvalid,
     output reg s_axi_wready,
 
@@ -129,15 +127,11 @@ module axi_mm_channel_out (
     //           | NNNN NNNN | NNNN NNNN | CCCC CCCC
     //           |           | SSSS SSSS |       RTP <- Supr... / Stack... / Pending
     //
-    reg prev_s_axi_rready_valid;
-
     always @(posedge aclk)
     begin
         // TODO: Without a buffer, we cannot accept a read with a response
         // pending.
         s_axi_arready <= !s_axi_rvalid;
-
-        prev_s_axi_rready_valid <= 0;
 
         if (s_axi_arvalid && s_axi_arready)
         begin
@@ -188,10 +182,9 @@ module axi_mm_channel_out (
             endcase
 
             s_axi_rvalid <= 1;
-            prev_s_axi_rready_valid <= s_axi_rready;
         end
 
-        if ((s_axi_rvalid && s_axi_rready) || prev_s_axi_rready_valid)
+        if (s_axi_rvalid && s_axi_rready)
         begin
             s_axi_rvalid <= 0;
             s_axi_arready <= 1;
@@ -204,10 +197,75 @@ module axi_mm_channel_out (
         end
     end
 
+    reg [7:0] waddr;
+    reg waddr_loaded;
+    reg [31:0] wdata;
+    reg [3:0] wstrb;
+    reg wdata_loaded;
+
     always @(posedge aclk)
     begin
+        s_axi_awready <= !waddr_loaded && !s_axi_bvalid;
+
+        if (s_axi_awvalid && s_axi_awready)
+        begin
+            s_axi_awready <= 0;
+
+            waddr <= s_axi_awaddr;
+            waddr_loaded <= 1;
+        end
+
+        s_axi_wready <= !wdata_loaded && !s_axi_bvalid;
+
+        if (s_axi_wvalid && s_axi_wready)
+        begin
+            s_axi_wready <= 0;
+
+            wdata <= s_axi_wdata;
+            wstrb <= s_axi_wstrb;
+            wdata_loaded <= 1;
+        end
+
+        if (waddr_loaded && wdata_loaded)
+        begin
+            s_axi_bresp <= 2'b00;
+
+            case (waddr)
+                REG_CHANNEL_1:
+                begin
+                    // TODO: wstrb
+                    channel_enable <= wdata[0];
+                    frontend_enable <= wdata[1];
+                end
+
+                default:
+                begin
+                    s_axi_bresp <= 2'b10; // SLVERR
+                end
+            endcase
+
+            s_axi_bvalid <= 1;
+
+            waddr_loaded <= 0;
+            wdata_loaded <= 0;
+        end
+
+        if (s_axi_bvalid && s_axi_bready)
+        begin
+            s_axi_bvalid <= 0;
+            s_axi_awready <= 1;
+            s_axi_wready <= 1;
+        end
+
         if (!aresetn)
         begin
+            s_axi_awready <= 0;
+            s_axi_wready <= 0;
+            s_axi_bvalid <= 0;
+
+            waddr_loaded <= 0;
+            wdata_loaded <= 0;
+
             channel_enable <= 0;
             device_enable <= 0;
             status_pending <= 0;
