@@ -95,12 +95,12 @@ module axi_mm_channel_out (
     parameter CLOCKS_PER_100_NS = 5; // 50 MHz clock period is 20 ns
 
     localparam REG_CHANNEL_1 = 8'h00;
-    localparam REG_WRAP_TESTER_1 = 8'h04;
-    localparam REG_WRAP_TESTER_2 = 8'h08;
-    localparam REG_DEVICE_1 = 8'h0c;
-    localparam REG_DEVICE_2 = 8'h10;
-    localparam REG_DEVICE_3 = 8'h14;
-    localparam REG_DEVICE_4 = 8'h18;
+    localparam REG_CHANNEL_3 = 8'h08;
+    localparam REG_CHANNEL_4 = 8'h0c;
+    localparam REG_DEVICE_1 = 8'h10;
+    localparam REG_DEVICE_2 = 8'h14;
+    localparam REG_DEVICE_3 = 8'h18;
+    localparam REG_DEVICE_4 = 8'h1c;
 
     reg channel_enable = 0;
 
@@ -117,10 +117,10 @@ module axi_mm_channel_out (
     // The control interface...
     //
     // ---- ---- | ---- ---- | ---- ---- | ---- ----
-    //           |           |           |        FE <- "Channel enable"
-    //           |           |           |        ^---- "Frontend enable"
-    // DDDD DDDD | DDDD DDDD | DDDD      |         W <- Wrap tester enable
-    // RRRR RRRR | RRRR RRRR | RRRR      |
+    //           |           |           |         E <- "Channel enable"
+    //           |           |           |
+    // DDDD DDDD | DDDD DDDD | DDDD    W |         F <- Frontend enable
+    // RRRR RRRR | RRRR RRRR | RRRR    ^--------------- Wrap tester enable
     // ---- ---- | ---- ---- | ---- ---- | ---- ----
     // AAAA AAAA |           |           |         E <- "Device enable"
     //           |           |           |         S <- Start
@@ -142,15 +142,15 @@ module axi_mm_channel_out (
             case (s_axi_araddr)
                 REG_CHANNEL_1:
                 begin
-                    s_axi_rdata <= { 30'b0, frontend_enable, channel_enable };
+                    s_axi_rdata <= { 31'b0, channel_enable };
                 end
 
-                REG_WRAP_TESTER_1:
+                REG_CHANNEL_3:
                 begin
-                    s_axi_rdata <= { wrap_tester_driver, 11'b0, wrap_tester_enable };
+                    s_axi_rdata <= { wrap_tester_driver, 3'b0, wrap_tester_enable, 7'b0, frontend_enable };
                 end
 
-                REG_WRAP_TESTER_2:
+                REG_CHANNEL_4:
                 begin
                     s_axi_rdata <= { wrap_tester_receiver, 12'b0 };
                 end
@@ -235,7 +235,17 @@ module axi_mm_channel_out (
                 begin
                     // TODO: wstrb
                     channel_enable <= wdata[0];
-                    frontend_enable <= wdata[1];
+                end
+
+                REG_CHANNEL_3:
+                begin
+                    // TODO: wstrb
+                    frontend_enable <= wdata[0];
+
+                    // NOTE: Enabling the wrap test while the channel is enabled
+                    // is probably undesirable, but not enforced here.
+                    wrap_tester_enable <= wdata[8];
+                    wrap_tester_driver <= wdata[31:12];
                 end
 
                 default:
@@ -364,7 +374,7 @@ module axi_mm_channel_out (
                 end
                 else if (!device_enable)
                 begin
-                    // Nothing to do, if the CU wants something we'd answer them
+                    // Nothing to do, if a CU wants something we'd answer them
                     // above.
                 end
                 else if (status_suppressed && !status_pending)

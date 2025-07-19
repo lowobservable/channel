@@ -35,6 +35,6 @@ uint8_t chan_out_device_status(struct chan_out *chan);
 
 bool chan_out_request_in(struct chan_out *chan);
 
-void chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver);
+int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver);
 
 #endif

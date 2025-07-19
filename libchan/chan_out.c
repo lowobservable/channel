@@ -11,14 +11,14 @@
 
 #define REGS_SIZE 1024
 
-#define REG_WRAP_TESTER_1 0
-#define REG_WRAP_TESTER_2 1
-#define REG_CONTROL_1 2
-#define REG_CONTROL_2 3
-#define REG_STATUS_1 4
-#define REG_STATUS_2 5
-#define REG_CCW_1 6
-#define REG_CCW_2 7
+#define REG_CHANNEL_1 0
+#define REG_CHANNEL_3 2
+#define REG_CHANNEL_4 3
+#define REG_CONTROL_2 4
+#define REG_DEVICE_1 5
+#define REG_DEVICE_2 6
+#define REG_DEVICE_3 7
+#define REG_DEVICE_4 8
 
 void config(struct chan_out *chan, bool enable, bool frontend_enable);
 static inline bool is_read_cmd(uint8_t cmd);
@@ -70,117 +70,133 @@ int chan_out_close(struct chan_out *chan, bool disable)
 
 int chan_out_test(struct chan_out *chan, uint8_t addr)
 {
-    // Channel is active...
-    if (chan->regs[REG_STATUS_1] & 0x01) {
-        return -2;
-    }
+    return -1;
+    //// Channel is active...
+    //if (chan->regs[REG_STATUS_1] & 0x01) {
+    //    return -2;
+    //}
 
-    chan->regs[REG_CCW_1] = 0x00 /* TEST */ << 24;
-    chan->regs[REG_CCW_2] = chan->udmabuf.addr;
+    //chan->regs[REG_CCW_1] = 0x00 /* TEST */ << 24;
+    //chan->regs[REG_CCW_2] = chan->udmabuf.addr;
 
-    chan->regs[REG_CONTROL_2] = (addr << 24) | 0x01; // Start...
+    //chan->regs[REG_CONTROL_2] = (addr << 24) | 0x01; // Start...
 
-    while (chan->regs[REG_STATUS_1] & 0x01) {
-        usleep(100);
-    }
+    //while (chan->regs[REG_STATUS_1] & 0x01) {
+    //    usleep(100);
+    //}
 
-    uint8_t condition_code = (uint8_t) ((chan->regs[REG_STATUS_1] & 0xc0) >> 6);
+    //uint8_t condition_code = (uint8_t) ((chan->regs[REG_STATUS_1] & 0xc0) >> 6);
 
-    if (condition_code != 0) {
-        return -3;
-    }
+    //if (condition_code != 0) {
+    //    return -3;
+    //}
 
-    return 0;
+    //return 0;
 }
 
 ssize_t chan_out_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
 {
-    if (count > 0 && buf == NULL) {
-        return -1;
-    }
+    return -1;
+    //if (count > 0 && buf == NULL) {
+    //    return -1;
+    //}
 
-    if (count > UINT16_MAX) {
-        return -1;
-    }
+    //if (count > UINT16_MAX) {
+    //    return -1;
+    //}
 
-    if (count > chan->udmabuf.size) {
-        return -1;
-    }
+    //if (count > chan->udmabuf.size) {
+    //    return -1;
+    //}
 
-    // Channel is active...
-    if (chan->regs[REG_STATUS_1] & 0x01) {
-        return -2;
-    }
+    //// Channel is active...
+    //if (chan->regs[REG_STATUS_1] & 0x01) {
+    //    return -2;
+    //}
 
-    if (is_write_cmd(cmd) && count > 0) {
-        udmabuf_copy_to_dma(&chan->udmabuf, buf, count);
-    }
+    //if (is_write_cmd(cmd) && count > 0) {
+    //    udmabuf_copy_to_dma(&chan->udmabuf, buf, count);
+    //}
 
-    chan->regs[REG_CCW_1] = (cmd << 24) | (uint16_t) count;
-    chan->regs[REG_CCW_2] = chan->udmabuf.addr;
+    //chan->regs[REG_CCW_1] = (cmd << 24) | (uint16_t) count;
+    //chan->regs[REG_CCW_2] = chan->udmabuf.addr;
 
-    chan->regs[REG_CONTROL_2] = (addr << 24) | 0x01; // Start...
+    //chan->regs[REG_CONTROL_2] = (addr << 24) | 0x01; // Start...
 
-    while (chan->regs[REG_STATUS_1] & 0x01) {
-        usleep(100);
-    }
+    //while (chan->regs[REG_STATUS_1] & 0x01) {
+    //    usleep(100);
+    //}
 
-    uint8_t condition_code = (uint8_t) ((chan->regs[REG_STATUS_1] & 0xc0) >> 6);
+    //uint8_t condition_code = (uint8_t) ((chan->regs[REG_STATUS_1] & 0xc0) >> 6);
 
-    if (condition_code != 0) {
-        return -3;
-    }
+    //if (condition_code != 0) {
+    //    return -3;
+    //}
 
-    uint8_t device_status = chan_out_device_status(chan);
+    //uint8_t device_status = chan_out_device_status(chan);
 
-    if (device_status & CHAN_STATUS_BUSY) {
-        return -4;
-    }
+    //if (device_status & CHAN_STATUS_BUSY) {
+    //    return -4;
+    //}
 
-    // We expect channel end and device end...
-    if (!((device_status & CHAN_STATUS_CE) && (device_status & CHAN_STATUS_DE))) {
-        return -5;
-    }
+    //// We expect channel end and device end...
+    //if (!((device_status & CHAN_STATUS_CE) && (device_status & CHAN_STATUS_DE))) {
+    //    return -5;
+    //}
 
-    // We don't expect unit check or unit exception...
-    if (device_status & CHAN_STATUS_UC || device_status & CHAN_STATUS_UX) {
-        return -6;
-    }
+    //// We don't expect unit check or unit exception...
+    //if (device_status & CHAN_STATUS_UC || device_status & CHAN_STATUS_UX) {
+    //    return -6;
+    //}
 
-    // The count in the status register is a "residual" count.
-    size_t actual_count = count - (uint16_t) chan->regs[REG_STATUS_2];
+    //// The count in the status register is a "residual" count.
+    //size_t actual_count = count - (uint16_t) chan->regs[REG_STATUS_2];
 
-    if (is_read_cmd(cmd) && actual_count > 0) {
-        udmabuf_copy_from_dma(&chan->udmabuf, buf, actual_count);
-    }
+    //if (is_read_cmd(cmd) && actual_count > 0) {
+    //    udmabuf_copy_from_dma(&chan->udmabuf, buf, actual_count);
+    //}
 
-    return actual_count;
+    //return actual_count;
 }
 
 uint8_t chan_out_device_status(struct chan_out *chan)
 {
-    return (uint8_t) (chan->regs[REG_STATUS_2] >> 24);
+    return 0;
+    //return (uint8_t) (chan->regs[REG_STATUS_2] >> 24);
 }
 
 bool chan_out_request_in(struct chan_out *chan)
 {
-    return chan->regs[REG_STATUS_1] & 0x02;
+    return false;
+    //return chan->regs[REG_STATUS_1] & 0x02;
 }
 
-void chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver)
+int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver)
 {
-    chan->regs[REG_WRAP_TESTER_1] = ((driver & 0x000fffff) << 12) | 0x01;
+    // Channel must not be enabled during wrap test.
+    if (chan->regs[REG_CHANNEL_1] & 0x00000001) {
+        return -1;
+    }
+
+    chan->regs[REG_CHANNEL_3] |= ((driver & 0x000fffff) << 12) | 0x0100;
 
     usleep(50000); // 50ms
 
-    *receiver = (chan->regs[REG_WRAP_TESTER_2] >> 12) & 0x000fffff;
+    uint32_t value = (chan->regs[REG_CHANNEL_4] >> 12) & 0x000fffff;
 
-    chan->regs[REG_WRAP_TESTER_1] = 0;
+    chan->regs[REG_CHANNEL_3] &= ~0x0100;
+
+    if (receiver != NULL) {
+        *receiver = value;
+    }
+
+    return ~(value & driver);
 }
 
 void config(struct chan_out *chan, bool enable, bool frontend_enable)
 {
-    chan->regs[REG_CONTROL_1] = (frontend_enable << 31) | (enable << 1);
+    chan->regs[REG_CHANNEL_1] = enable;
+    chan->regs[REG_CHANNEL_3] = frontend_enable;
 }
 
 static inline bool is_read_cmd(uint8_t cmd)

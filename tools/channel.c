@@ -78,11 +78,14 @@ bool wrap_test(struct chan_out *chan)
     for (size_t index = 0; index < len; index++) {
         struct wrap_test_case *test_case = &wrap_test_cases[index];
 
-        uint32_t receiver;
+        int result = chan_out_wrap_test(chan, test_case->driver, NULL);
 
-        chan_out_wrap_test(chan, test_case->driver, &receiver);
+        if (result < 0) {
+            printf("Wrap test error, channel may be enabled.\n");
+            return false;
+        }
 
-        if (receiver == test_case->driver) {
+        if (result == 0) {
             printf("%-15s | %-15s | pass\n", test_case->driver_name, test_case->receiver_name);
         } else {
             printf("%-15s | %-15s | FAIL\n", test_case->driver_name, test_case->receiver_name);

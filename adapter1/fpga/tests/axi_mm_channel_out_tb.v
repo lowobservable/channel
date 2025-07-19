@@ -27,6 +27,8 @@ module axi_mm_channel_out_tb;
     wire service_out;
     wire suppress_out;
 
+    wire [19:0] wrap;
+
     axi_mm_channel_out #(
         .CLOCKS_PER_100_NS(5)
     ) channel (
@@ -35,24 +37,12 @@ module axi_mm_channel_out_tb;
 
         .s_axi_araddr(master_bfm.m_axi_araddr),
         .s_axi_arvalid(master_bfm.m_axi_arvalid),
-        //.s_axi_arready(),
-
-        //.s_axi_rdata(),
-        //.s_axi_rresp(),
-        //.s_axi_rvalid(),
         .s_axi_rready(master_bfm.m_axi_rready),
-
         .s_axi_awaddr(master_bfm.m_axi_awaddr),
         .s_axi_awvalid(master_bfm.m_axi_awvalid),
-        //.s_axi_awready(),
-
         .s_axi_wdata(master_bfm.m_axi_wdata),
         .s_axi_wstrb(master_bfm.m_axi_wstrb),
         .s_axi_wvalid(master_bfm.m_axi_wvalid),
-        //.s_axi_wready(),
-
-        //.s_axi_bresp(),
-        //.s_axi_bvalid(),
         .s_axi_bready(master_bfm.m_axi_bready),
 
         .a_bus_in(bus_in),
@@ -71,34 +61,24 @@ module axi_mm_channel_out_tb;
         .a_status_in(status_in),
         .a_service_in(service_in),
         .a_service_out(service_out),
-        .a_suppress_out(suppress_out)
+        .a_suppress_out(suppress_out),
+
+        .wrap_tester_driver(wrap),
+        .wrap_tester_receiver(wrap)
     );
 
     axil_master_bfm master_bfm (
         .aclk(clk),
         .aresetn(!channel_reset),
 
-        //.m_axi_araddr(),
-        //.m_axi_arvalid(),
         .m_axi_arready(channel.s_axi_arready),
-
         .m_axi_rdata(channel.s_axi_rdata),
         .m_axi_rresp(channel.s_axi_rresp),
         .m_axi_rvalid(channel.s_axi_rvalid),
-        //.m_axi_rready(),
-
-        //.m_axi_awaddr(),
-        //.m_axi_awvalid(),
         .m_axi_awready(channel.s_axi_awready),
-
-        //.m_axi_wdata(),
-        //.m_axi_wstrb(),
-        //.m_axi_wvalid(),
         .m_axi_wready(channel.s_axi_wready),
-
         .m_axi_bresp(channel.s_axi_bresp),
         .m_axi_bvalid(channel.s_axi_bvalid)
-        //.m_axi_bready()
     );
 
     wire terminator;
@@ -166,10 +146,10 @@ module axi_mm_channel_out_tb;
         $dumpfile("axi_mm_channel_out_tb.vcd");
         $dumpvars(0, axi_mm_channel_out_tb);
 
-        //test_read_register;
-        //test_write_register;
-
+        test_read_register;
+        test_write_register;
         test_enable_disable_channel;
+        test_wrap_tester;
 
         $finish;
     end
@@ -230,6 +210,39 @@ module axi_mm_channel_out_tb;
         wait(!channel.a_operational_out);
 
         $display("END: test_enable_disable_channel");
+    end
+    endtask
+
+    task test_wrap_tester;
+        reg [31:0] data;
+        reg [1:0] resp;
+    begin
+        $display("START: test_wrap_tester");
+
+        reset;
+
+        // Enable only the wrap tester, in a practical design the frontend would
+        // also need to be enabled for a wrap test.
+        master_bfm.write(channel.REG_CHANNEL_3, 32'hfffff100, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        wait(channel.wrap_tester_enable);
+
+        `assert_equal(channel.wrap_tester_driver, 20'hfffff, "wrap tester driver should be HIGH");
+
+        master_bfm.read(channel.REG_CHANNEL_4, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+        `assert_equal(data[31:12], channel.wrap_tester_receiver, "register should match receiver");
+
+        master_bfm.write(channel.REG_CHANNEL_3, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        wait(!channel.wrap_tester_enable);
+
+        $display("END: test_wrap_tester");
     end
     endtask
 
