@@ -12,7 +12,7 @@ module channel_out_protocol_tb;
     reg protocol_in_tvalid = 0;
     reg protocol_out_tready = 0;
 
-    reg protocol_burst = 1; // Selector channel behavior
+    reg protocol_burst = 0; // Selector channel behavior
 
     wire [7:0] bus_in;
     wire bus_in_parity;
@@ -82,6 +82,7 @@ module channel_out_protocol_tb;
 
     reg cu_mock_busy = 0;
     reg cu_mock_short_busy = 0;
+    reg cu_mock_request = 0;
     reg [15:0] cu_mock_limit = 0;
 
     mock_cu #(
@@ -127,6 +128,7 @@ module channel_out_protocol_tb;
 
         .mock_busy(cu_mock_busy),
         .mock_short_busy(cu_mock_short_busy),
+        .mock_request(cu_mock_request),
         .mock_limit(cu_mock_limit)
     );
 
@@ -150,6 +152,7 @@ module channel_out_protocol_tb;
         test_initial_selection_short_busy;
         test_read_command_channel_stop;
         test_write_command_channel_stop;
+        test_request_status_accept;
 
         /*
         test_nop_command;
@@ -252,12 +255,15 @@ module channel_out_protocol_tb;
 
         cu_mock_busy <= 1;
         cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
 
         @(posedge clk);
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out, { 4'b1001, 4'h1, 8'h1a, 8'h10 }, "response should be BUSY status");
+        `assert_equal(out[23:16], 8'h91, "response should be initial status with valid parity");
+        `assert_equal(out[15:8], 8'h1a, "address should be 1A");
+        `assert_equal(out[7:0], 8'h10, "status should be BUSY");
 
         @(posedge clk);
 
@@ -274,12 +280,15 @@ module channel_out_protocol_tb;
 
         cu_mock_busy <= 0;
         cu_mock_short_busy <= 1;
+        cu_mock_request <= 0;
 
         @(posedge clk);
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out, { 4'b1101, 4'h1, 8'h1a, 8'h10 }, "response should be BUSY status");
+        `assert_equal(out[23:16], 8'hd1, "response should be short busy status with valid parity");
+        `assert_equal(out[15:8], 8'h1a, "address should be 1A");
+        `assert_equal(out[7:0], 8'h10, "status should be BUSY");
 
         @(posedge clk);
 
@@ -297,19 +306,24 @@ module channel_out_protocol_tb;
 
         cu_mock_busy <= 0;
         cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
         cu_mock_limit <= 16; // CU can provide 16 bytes
 
         @(posedge clk);
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
-        `assert_equal(out, { 4'b1001, 4'h1, 8'h1a, 8'h00 }, "response should be accepted status");
+        `assert_equal(out[23:16], 8'h91, "response should be initial status with valid parity");
+        `assert_equal(out[15:8], 8'h1a, "address should be 1A");
+        `assert_equal(out[7:0], 8'h00, "status should be accepted");
 
         for (byte = 1; byte <= 7; byte = byte + 1)
         begin
             sink.recv(out);
 
-            `assert_equal(out, { 4'b0001, 4'h2, 8'h1a, byte }, "event should be data transfer with correct byte and valid parity");
+            `assert_equal(out[23:16], 8'h12, "response should be service with valid parity");
+            `assert_equal(out[15:8], 8'h1a, "address should be 1A");
+            `assert_equal(out[7:0], byte, "data should be expected byte");
 
             if (byte == 7)
             begin
@@ -327,7 +341,9 @@ module channel_out_protocol_tb;
 
         sink.recv(out);
 
-        `assert_equal(out, { 4'b0001, 4'h1, 8'h1a, 8'h0c }, "response should be CE + DE status");
+        `assert_equal(out[23:16], 8'h11, "response should be status with valid parity");
+        `assert_equal(out[15:8], 8'h1a, "address should be 1A");
+        `assert_equal(out[7:0], 8'h0c, "status should be CE + DE");
 
         exec({ 8'h02, 16'h00 }, out); // Accept Status - No Chaining
 
@@ -349,19 +365,23 @@ module channel_out_protocol_tb;
 
         cu_mock_busy <= 0;
         cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
         cu_mock_limit <= 16; // CU can provide 16 bytes
 
         @(posedge clk);
 
         exec({ 8'h11, 8'h1a, 8'h01 }, out); // Initial Selection - WRITE
 
-        `assert_equal(out, { 4'b1001, 4'h1, 8'h1a, 8'h00 }, "response should be accepted status");
+        `assert_equal(out[23:16], 8'h91, "response should be initial status with valid parity");
+        `assert_equal(out[15:8], 8'h1a, "address should be 1A");
+        `assert_equal(out[7:0], 8'h00, "status should be accepted");
 
         for (byte = 1; byte <= 7; byte = byte + 1)
         begin
             sink.recv(out);
 
-            `assert_equal(out, { 4'b0001, 4'h2, 8'h1a, 8'h00 }, "event should be data transfer");
+            `assert_equal(out[19:16], 8'h2, "response should be service");
+            `assert_equal(out[15:8], 8'h1a, "address should be 1A");
 
             if (byte == 7)
             begin
@@ -379,7 +399,9 @@ module channel_out_protocol_tb;
 
         sink.recv(out);
 
-        `assert_equal(out, { 4'b0001, 4'h1, 8'h1a, 8'h0c }, "response should be CE + DE status");
+        `assert_equal(out[23:16], 8'h11, "response should be status with valid parity");
+        `assert_equal(out[15:8], 8'h1a, "address should be 1A");
+        `assert_equal(out[7:0], 8'h0c, "status should be CE + DE");
 
         exec({ 8'h02, 16'h00 }, out); // Accept Status - No Chaining
 
@@ -388,6 +410,37 @@ module channel_out_protocol_tb;
         @(posedge clk);
 
         $display("END: test_write_command_channel_stop");
+    end
+    endtask
+
+    task test_request_status_accept;
+        reg [23:0] out;
+    begin
+        $display("START: test_request_status_accept");
+
+        reset;
+
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 1;
+
+        @(posedge clk);
+
+        wait(protocol.request);
+
+        exec({ 8'h01, 16'h00 }, out); // Select Requestor
+
+        `assert_equal(out[23:16], 8'h11, "response should be status with valid parity");
+        `assert_equal(out[15:8], 8'h1a, "address should be 1A");
+        `assert_equal(out[7:0], 8'h85, "status should be ATTN + DE + UX");
+
+        exec({ 8'h02, 16'h00 }, out); // Accept Status - No Chaining
+
+        `assert_equal(out, 24'h00, "response should be acknowledgement");
+
+        @(posedge clk);
+
+        $display("END: test_request_status_accept");
     end
     endtask
 

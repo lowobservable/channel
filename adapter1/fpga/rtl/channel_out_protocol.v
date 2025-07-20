@@ -23,13 +23,13 @@ module channel_out_protocol (
     // 2222 1111 1111 11
     // 3210 9876 5432 1098 7654 3210
     // ---- ---- ---- ---- ---- ----
-    //    0   1h 0000 0000 0000 0000 - Select Requestor  -> Connected | Error
+    //    0   1h 0000 0000 0000 0000 - Select Requestor  -> Service | Status | Error
     // C  1   1h AAAA AAAA CCCC CCCC - Initial Selection -> Status | Error
     //
-    // C      2h                     - Accept Status     -> Ack | Error
+    // C      2h                     - Accept Status     -> Ack
     // ^---- Chaining (TODO)
-    //    0   3h                     - Stack Status      -> Ack | Error
-    //    1   3h                     - Suppress Status   -> Ack | Error
+    //    0   3h                     - Stack Status      -> Ack
+    //    1   3h                     - Suppress Status   -> Ack
     //
     //        4h DDDD DDDD           - Send Data         -> Ack
     //        5h                     - Accept Data       -> Ack
@@ -59,7 +59,7 @@ module channel_out_protocol (
     input wire burst,
 
     output reg connected,
-    output wire request,
+    output reg request,
 
     // TODO: Ideally all errors could be reported through the AXI stream,
     // however that may require deferring errors while waiting on the driver to
@@ -127,19 +127,26 @@ module channel_out_protocol (
     localparam STATE_INITIAL_SELECTION_14 = 18;
     localparam STATE_INITIAL_SELECTION_15 = 19;
     localparam STATE_INITIAL_SELECTION_16 = 20;
-    localparam STATE_DATA_TRANSFER_1 = 21;
-    localparam STATE_DATA_TRANSFER_2 = 22;
-    localparam STATE_DATA_TRANSFER_3 = 23;
-    localparam STATE_DATA_TRANSFER_4 = 24;
-    localparam STATE_DATA_TRANSFER_5 = 25;
-    localparam STATE_DATA_TRANSFER_6 = 26;
-    localparam STATE_DATA_TRANSFER_7 = 27;
-    localparam STATE_ENDING_1 = 28;
-    localparam STATE_ENDING_2 = 29;
-    localparam STATE_ENDING_3 = 30;
-    localparam STATE_ENDING_4 = 31;
-    localparam STATE_ENDING_5 = 32;
-    localparam STATE_ENDING_6 = 33;
+    localparam STATE_SELECT_REQUESTOR_1 = 21;
+    localparam STATE_SELECT_REQUESTOR_2 = 22;
+    localparam STATE_SELECT_REQUESTOR_3 = 23;
+    localparam STATE_SELECT_REQUESTOR_4 = 24;
+    localparam STATE_SELECT_REQUESTOR_5 = 25;
+    localparam STATE_SELECT_REQUESTOR_6 = 26;
+    localparam STATE_SELECT_REQUESTOR_7 = 27;
+    localparam STATE_DATA_TRANSFER_1 = 28;
+    localparam STATE_DATA_TRANSFER_2 = 29;
+    localparam STATE_DATA_TRANSFER_3 = 30;
+    localparam STATE_DATA_TRANSFER_4 = 31;
+    localparam STATE_DATA_TRANSFER_5 = 32;
+    localparam STATE_DATA_TRANSFER_6 = 33;
+    localparam STATE_DATA_TRANSFER_7 = 34;
+    localparam STATE_ENDING_1 = 35;
+    localparam STATE_ENDING_2 = 36;
+    localparam STATE_ENDING_3 = 37;
+    localparam STATE_ENDING_4 = 38;
+    localparam STATE_ENDING_5 = 39;
+    localparam STATE_ENDING_6 = 40;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
@@ -157,9 +164,8 @@ module channel_out_protocol (
     reg [7:0] data;
     reg [7:0] next_data;
     reg next_connected;
+    reg next_request;
     reg [15:0] next_error;
-
-    assign request = a_request_in;
 
     wire bus_in_parity_valid;
 
@@ -233,6 +239,7 @@ module channel_out_protocol (
         next_command = command;
         next_data = data;
         next_connected = 0;
+        next_request = a_request_in;
         next_error = error;
 
         // Leave bus out low when idle to reduce driver current.
@@ -252,6 +259,8 @@ module channel_out_protocol (
         case (state)
             STATE_SYSTEM_RESET:
             begin
+                next_request = 0;
+
                 // SPEC: To ensure a proper reset, 'operational out' and
                 // 'suppress out' are down concurrently for at least
                 // 6 microseconds.
@@ -280,6 +289,11 @@ module channel_out_protocol (
                             next_command = in_tdata[7:0];
 
                             next_state = STATE_INITIAL_SELECTION_1;
+                        end
+
+                        8'h01: // Select Requestor
+                        begin
+                            next_state = STATE_SELECT_REQUESTOR_1;
                         end
 
                         default:
@@ -794,6 +808,175 @@ module channel_out_protocol (
                 end
             end
 
+            STATE_SELECT_REQUESTOR_1:
+            begin
+                next_operational_out = 1;
+
+                if (!a_operational_in && !a_select_in && !a_address_in && !a_status_in && !a_service_in)
+                begin
+                    // SPEC: Once 'hold out' drops, it does not rise for at
+                    // least 4 microseconds in general system configurations.
+                    if (hold_out_delay == 0)
+                    begin
+                        next_state = STATE_SELECT_REQUESTOR_2;
+                    end
+                end
+                else
+                begin
+                    protocol_violation;
+                end
+            end
+
+            STATE_SELECT_REQUESTOR_2:
+            begin
+                next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+
+                // Don't consider 'address in' here, it can rise at the same
+                // time as 'operational in', we'll look for that next.
+                if (a_operational_in && !a_select_in && !a_status_in && !a_service_in)
+                begin
+                    next_connected = 1;
+
+                    next_state = STATE_SELECT_REQUESTOR_3;
+                end
+                else if (a_select_in && !a_operational_in && !a_address_in && !a_status_in && !a_service_in)
+                begin
+                    next_out_tdata = out_error(ERROR_ADDRESS_NOT_OPERATIONAL);
+                    next_out_tvalid = 1;
+
+                    next_state = STATE_WAIT;
+                end
+                else if (!a_operational_in && !a_select_in && !a_status_in && !a_service_in)
+                begin
+                    if (state_timer == SELECT_OUT_IN_TIMEOUT_100_NS * CLOCKS_PER_100_NS)
+                    begin
+                        next_out_tdata = out_error(ERROR_TIMEOUT);
+                        next_out_tvalid = 1;
+
+                        next_state = STATE_WAIT;
+                    end
+                end
+                else
+                begin
+                    protocol_violation;
+                end
+            end
+
+            STATE_SELECT_REQUESTOR_3:
+            begin
+                next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+
+                next_connected = 1;
+
+                if (a_operational_in && !a_select_in && !a_status_in && !a_service_in)
+                begin
+                    if (a_address_in)
+                    begin
+                        next_state = STATE_SELECT_REQUESTOR_4;
+                    end
+                end
+                else
+                begin
+                    protocol_violation;
+                end
+            end
+
+            STATE_SELECT_REQUESTOR_4:
+            begin
+                next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+
+                next_connected = 1;
+
+                if (a_operational_in && a_address_in && !a_select_in && !a_status_in && !a_service_in)
+                begin
+                    if (state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
+                    begin
+                        next_state = STATE_SELECT_REQUESTOR_5;
+                    end
+                end
+                else
+                begin
+                    protocol_violation;
+                end
+            end
+
+            STATE_SELECT_REQUESTOR_5:
+            begin
+                next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+
+                next_connected = 1;
+
+                if (a_operational_in && a_address_in && !a_select_in && !a_status_in && !a_service_in)
+                begin
+                    if (!bus_in_parity_valid)
+                    begin
+                        protocol_violation;
+                    end
+                    else
+                    begin
+                        next_address = a_bus_in;
+
+                        next_state = STATE_SELECT_REQUESTOR_6;
+                    end
+                end
+                else
+                begin
+                    protocol_violation;
+                end
+            end
+
+            STATE_SELECT_REQUESTOR_6:
+            begin
+                next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+                next_command_out = 1;
+
+                next_connected = 1;
+
+                if (a_operational_in && !a_select_in && !a_status_in && !a_service_in)
+                begin
+                    if (!a_address_in)
+                    begin
+                        next_state = STATE_SELECT_REQUESTOR_7;
+                    end
+                end
+                else
+                begin
+                    protocol_violation;
+                end
+            end
+
+            STATE_SELECT_REQUESTOR_7:
+            begin
+                next_operational_out = 1;
+                next_hold_out = 1;
+                next_select_out = 1;
+
+                next_connected = 1;
+
+                if (a_operational_in && a_service_in && !a_select_in && !a_address_in && !a_status_in)
+                begin
+                    next_state = STATE_DATA_TRANSFER_1;
+                end
+                if (a_operational_in && a_status_in && !a_select_in && !a_address_in && !a_service_in)
+                begin
+                    next_state = STATE_ENDING_1;
+                end
+                else if (!a_operational_in || a_select_in || a_address_in)
+                begin
+                    protocol_violation;
+                end
+            end
+
             STATE_DATA_TRANSFER_1:
             begin
                 next_operational_out = 1;
@@ -1154,6 +1337,7 @@ module channel_out_protocol (
         command <= next_command;
         data <= next_data;
         connected <= next_connected;
+        request <= next_request;
         error <= next_error;
 
         a_bus_out <= next_bus_out;

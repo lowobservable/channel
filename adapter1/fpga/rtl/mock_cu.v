@@ -47,6 +47,7 @@ module mock_cu (
     // ...
     input wire mock_busy,
     input wire mock_short_busy,
+    input wire mock_request,
     input wire [15:0] mock_limit,
 
     output reg [7:0] command,
@@ -144,7 +145,7 @@ module mock_cu (
 
     always @(posedge clk)
     begin
-        request_in <= 1'b0;
+        request_in <= mock_request;
 
         if (operational_out)
         begin
@@ -160,20 +161,76 @@ module mock_cu (
 
                     selection_y <= selection_x;
 
-                    if (address_out && selection_x && hold_out && bus_out == ADDRESS)
+                    if (selection_x && hold_out)
                     begin
-                        selection_y <= 1'b0; // Intercept the selection
-
-                        if (mock_short_busy)
+                        if (address_out && bus_out == ADDRESS)
                         begin
-                            status <= 8'b0001_0000; // BUSY
+                            selection_y <= 1'b0; // Intercept the selection
 
-                            state <= 99;
+                            if (mock_short_busy)
+                            begin
+                                status <= 8'b0001_0000; // BUSY
+
+                                state <= 99;
+                            end
+                            else
+                            begin
+                                state <= 2;
+                            end
                         end
-                        else
+                        else if (!address_out && mock_request)
                         begin
-                            state <= 2;
+                            selection_y <= 1'b0; // Intercept the selection
+
+                            state <= 81;
                         end
+                    end
+                end
+
+                81:
+                begin
+                    operational_in <= 1;
+
+                    bus_in <= ADDRESS;
+                    address_in <= 1;
+
+                    if (command_out)
+                    begin
+                        address_in <= 0;
+                        state <= 82;
+                    end
+                end
+
+                82:
+                begin
+                    operational_in <= 1;
+
+                    if (!command_out)
+                    begin
+                        state <= 83;
+                    end
+                end
+
+                83:
+                begin
+                    operational_in <= 1;
+
+                    // Status requests only for now...
+                    bus_in <= 8'b10000101; // ATTN + DE + UX: Device ready...
+                    status_in <= 1;
+
+                    if (service_out)
+                    begin
+                        status_in <= 0;
+                        state <= 84;
+                    end
+                end
+
+                84:
+                begin
+                    if (!service_out)
+                    begin
+                        state <= 0;
                     end
                 end
 
