@@ -69,7 +69,6 @@ module axi_mm_channel_out_tb;
 
     axil_master_bfm master_bfm (
         .aclk(clk),
-        .aresetn(!channel_reset),
 
         .m_axi_arready(channel.s_axi_arready),
         .m_axi_rdata(channel.s_axi_rdata),

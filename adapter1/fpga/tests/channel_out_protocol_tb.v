@@ -39,13 +39,10 @@ module channel_out_protocol_tb;
         .clk(clk),
         .reset(protocol_reset),
 
-        .in_tdata(protocol_in_tdata),
-        .in_tvalid(protocol_in_tvalid),
-        .in_tready(),
+        .in_tdata(source.m_axi_tdata),
+        .in_tvalid(source.m_axi_tvalid),
 
-        .out_tdata(),
-        .out_tvalid(),
-        .out_tready(protocol_out_tready),
+        .out_tready(sink.s_axi_tready),
 
         .burst(protocol_burst),
 
@@ -66,6 +63,19 @@ module channel_out_protocol_tb;
         .a_service_in(service_in),
         .a_service_out(service_out),
         .a_suppress_out(suppress_out)
+    );
+
+    axis_source_bfm source (
+        .aclk(clk),
+
+        .m_axi_tready(protocol.in_tready)
+    );
+
+    axis_sink_bfm sink (
+        .aclk(clk),
+
+        .s_axi_tdata(protocol.out_tdata),
+        .s_axi_tvalid(protocol.out_tvalid)
     );
 
     wire terminator;
@@ -159,15 +169,13 @@ module channel_out_protocol_tb;
         reset;
 
         // Timed reset...
-        @(posedge clk)
-        begin
-            protocol_reset = 1;
-        end
+        protocol_reset <= 1;
 
-        @(posedge clk)
-        begin
-            protocol_reset = 0;
-        end
+        @(posedge clk);
+
+        protocol_reset <= 0;
+
+        @(posedge clk);
 
         @(negedge operational_out)
         begin
@@ -195,6 +203,8 @@ module channel_out_protocol_tb;
 
         `assert_high(protocol.in_tready, "in should be TREADY");
 
+        @(posedge clk);
+
         $display("END: test_system_reset");
     end
     endtask
@@ -209,6 +219,8 @@ module channel_out_protocol_tb;
         exec({ 8'h00, 8'h00, 8'h00 }, out); // Invalid
 
         `assert_equal(out[23:8], { 8'hff, 8'h01 }, "response should be invalid in error");
+
+        @(posedge clk);
 
         $display("END: test_invalid_in");
     end
@@ -225,6 +237,8 @@ module channel_out_protocol_tb;
 
         `assert_equal(out[23:8], { 8'hff, 8'h02 }, "response should be address not operational error");
 
+        @(posedge clk);
+
         $display("END: test_initial_selection_address_not_operational");
     end
     endtask
@@ -236,12 +250,16 @@ module channel_out_protocol_tb;
 
         reset;
 
-        cu_mock_busy = 1;
-        cu_mock_short_busy = 0;
+        cu_mock_busy <= 1;
+        cu_mock_short_busy <= 0;
+
+        @(posedge clk);
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
         `assert_equal(out, { 4'b1001, 4'h1, 8'h1a, 8'h10 }, "response should be BUSY status");
+
+        @(posedge clk);
 
         $display("END: test_initial_selection_busy");
     end
@@ -254,12 +272,16 @@ module channel_out_protocol_tb;
 
         reset;
 
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 1;
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 1;
+
+        @(posedge clk);
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
         `assert_equal(out, { 4'b1101, 4'h1, 8'h1a, 8'h10 }, "response should be BUSY status");
+
+        @(posedge clk);
 
         $display("END: test_initial_selection_short_busy");
     end
@@ -273,9 +295,11 @@ module channel_out_protocol_tb;
 
         reset;
 
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 0;
-        cu_mock_limit = 16; // CU can provide 16 bytes
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_limit <= 16; // CU can provide 16 bytes
+
+        @(posedge clk);
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
 
@@ -283,7 +307,7 @@ module channel_out_protocol_tb;
 
         for (byte = 1; byte <= 7; byte = byte + 1)
         begin
-            wait_event(out);
+            sink.recv(out);
 
             `assert_equal(out, { 4'b0001, 4'h2, 8'h1a, byte }, "event should be data transfer with correct byte and valid parity");
 
@@ -301,13 +325,15 @@ module channel_out_protocol_tb;
 
         `assert_equal(cu.count, 6, "count should be 6");
 
-        wait_event(out);
+        sink.recv(out);
 
         `assert_equal(out, { 4'b0001, 4'h1, 8'h1a, 8'h0c }, "response should be CE + DE status");
 
         exec({ 8'h02, 16'h00 }, out); // Accept Status - No Chaining
 
         `assert_equal(out, 24'h00, "response should be acknowledgement");
+
+        @(posedge clk);
 
         $display("END: test_read_command_channel_stop");
     end
@@ -321,9 +347,11 @@ module channel_out_protocol_tb;
 
         reset;
 
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 0;
-        cu_mock_limit = 16; // CU can provide 16 bytes
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_limit <= 16; // CU can provide 16 bytes
+
+        @(posedge clk);
 
         exec({ 8'h11, 8'h1a, 8'h01 }, out); // Initial Selection - WRITE
 
@@ -331,7 +359,7 @@ module channel_out_protocol_tb;
 
         for (byte = 1; byte <= 7; byte = byte + 1)
         begin
-            wait_event(out);
+            sink.recv(out);
 
             `assert_equal(out, { 4'b0001, 4'h2, 8'h1a, 8'h00 }, "event should be data transfer");
 
@@ -349,7 +377,7 @@ module channel_out_protocol_tb;
 
         `assert_equal(cu.count, 6, "count should be 6");
 
-        wait_event(out);
+        sink.recv(out);
 
         `assert_equal(out, { 4'b0001, 4'h1, 8'h1a, 8'h0c }, "response should be CE + DE status");
 
@@ -357,23 +385,23 @@ module channel_out_protocol_tb;
 
         `assert_equal(out, 24'h00, "response should be acknowledgement");
 
+        @(posedge clk);
+
         $display("END: test_write_command_channel_stop");
     end
     endtask
 
     task reset;
     begin
-        @(posedge clk)
-        begin
-            protocol_reset = 1;
-        end
+        protocol_reset <= 1;
 
-        @(posedge clk)
-        begin
-            protocol_reset = 0;
-        end
+        @(posedge clk);
 
-        @(posedge operational_out);
+        protocol_reset <= 0;
+
+        @(posedge clk);
+
+        wait(operational_out);
     end
     endtask
 
@@ -382,72 +410,13 @@ module channel_out_protocol_tb;
         output [23:0] out
     );
     begin
-        @(posedge clk)
-        begin
-            protocol_in_tdata = in;
-            protocol_in_tvalid = 1;
+        source.send(in);
 
-            protocol_out_tready = 1;
-        end
-
-        while (protocol_in_tvalid)
-        begin
-            @(posedge clk)
-            begin
-                if (protocol.in_tready)
-                begin
-                    $display("Request: %h", in);
-
-                    protocol_in_tvalid = 0;
-                end
-            end
-        end
-
-        while (protocol_out_tready)
-        begin
-            @(posedge clk)
-            begin
-                if (protocol.out_tvalid)
-                begin
-                    out = protocol.out_tdata;
-
-                    $display("Response: %h", out);
-
-                    protocol_out_tready = 0;
-                end
-            end
-        end
-    end
-    endtask
-
-    task wait_event (
-        output [23:0] out
-    );
-    begin
-        @(posedge clk)
-        begin
-            protocol_out_tready = 1;
-        end
-
-        while (protocol_out_tready)
-        begin
-            @(posedge clk)
-            begin
-                if (protocol.out_tvalid)
-                begin
-                    out = protocol.out_tdata;
-
-                    $display("Event: %h", out);
-
-                    protocol_out_tready = 0;
-                end
-            end
-        end
+        sink.recv(out);
     end
     endtask
 
     /*
-
     task test_nop_command;
     begin
         $display("START: test_nop_command");
@@ -489,6 +458,5 @@ module channel_out_protocol_tb;
         $display("END: test_invalid_command");
     end
     endtask
-
     */
 endmodule

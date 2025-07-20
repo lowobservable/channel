@@ -16,7 +16,6 @@
 
 module axil_master_bfm (
     input wire aclk,
-    input wire aresetn,
 
     output reg [7:0] m_axi_araddr,
     output reg m_axi_arvalid,
