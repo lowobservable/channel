@@ -17,12 +17,12 @@
 iconv_t ebcdic_conv;
 
 bool test(struct chan_out *chan, uint8_t addr);
-bool exec_nop(struct chan_out *chan, uint8_t addr);
-bool exec_basic_sense(struct chan_out *chan, uint8_t addr);
-bool exec_sense_id(struct chan_out *chan, uint8_t addr);
-bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len);
-bool exec_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid);
-void wait_for_request_in(struct chan_out *chan);
+//bool exec_nop(struct chan_out *chan, uint8_t addr);
+//bool exec_basic_sense(struct chan_out *chan, uint8_t addr);
+//bool exec_sense_id(struct chan_out *chan, uint8_t addr);
+//bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len);
+//bool exec_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid);
+//void wait_for_request_in(struct chan_out *chan);
 size_t format_screen(uint8_t *buf, size_t buf_size, uint8_t aid);
 ssize_t ebcdic_write(uint8_t *buf, size_t buf_size, char *ascii);
 
@@ -51,7 +51,7 @@ int main(void)
 
     test(&chan, 0x60);
 
-    chan_out_close(&chan, true);
+    chan_out_close(&chan);
 
     close(mem_fd);
 
@@ -62,235 +62,235 @@ int main(void)
 
 bool test(struct chan_out *chan, uint8_t addr)
 {
-    while (true) {
-        printf("TEST...\n");
-
-        int result = chan_out_test(chan, addr);
-
-        if (result < 0) {
-            printf("\tresult = %d\n", result);
-            return false;
-        }
-
-        uint8_t status = chan_out_device_status(chan);
-
-        printf("\tstatus = 0x%.2x\n", status);
-
-        if (status == 0x00) {
-            break;
-        }
-
-        sleep(1);
-    }
-
-    if (!exec_nop(chan, addr)) {
-        return false;
-    }
-
-    if (!exec_sense_id(chan, addr)) {
-        return false;
-    }
-
-    uint8_t aid = 0;
-
-    while (true) {
-        uint8_t buf[256];
-
-        size_t buf_len = format_screen(buf, sizeof(buf), aid);
-
-        if (!exec_erase_write(chan, addr, buf, buf_len)) {
-            return false;
-        }
-
-        // Don't check for exit until after sending the screen...
-        if (aid == 0xf3 /* PF3 */) {
-            break;
-        }
-
-        wait_for_request_in(chan);
-
-        printf("REQUEST IN...\n");
-
-        int result = chan_out_test(chan, addr);
-
-        if (result < 0) {
-            printf("result = %d\n", result);
-            return false;
-        }
-
-        uint8_t status = chan_out_device_status(chan);
-
-        if (status == 0x00) {
-            continue;
-        }
-
-        printf("status = 0x%.2x\n", status);
-
-        if (status & CHAN_STATUS_ATTN) {
-            printf("ATTN...\n");
-
-            if (!exec_read_modified(chan, addr, &aid)) {
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-
-bool exec_nop(struct chan_out *chan, uint8_t addr)
-{
-    printf("NOP...\n");
-
-    ssize_t result = chan_out_exec(chan, addr, 0x03 /* NOP */, NULL, 0);
-
-    if (result < 0) {
-        printf("\tresult = %zd\n", result);
-        return false;
-    }
-
-    uint8_t status = chan_out_device_status(chan);
-
-    printf("\tstatus = 0x%.2x\n", status);
+//    while (true) {
+//        printf("TEST...\n");
+//
+//        int result = chan_out_test(chan, addr);
+//
+//        if (result < 0) {
+//            printf("\tresult = %d\n", result);
+//            return false;
+//        }
+//
+//        uint8_t status = chan_out_device_status(chan);
+//
+//        printf("\tstatus = 0x%.2x\n", status);
+//
+//        if (status == 0x00) {
+//            break;
+//        }
+//
+//        sleep(1);
+//    }
+//
+//    if (!exec_nop(chan, addr)) {
+//        return false;
+//    }
+//
+//    if (!exec_sense_id(chan, addr)) {
+//        return false;
+//    }
+//
+//    uint8_t aid = 0;
+//
+//    while (true) {
+//        uint8_t buf[256];
+//
+//        size_t buf_len = format_screen(buf, sizeof(buf), aid);
+//
+//        if (!exec_erase_write(chan, addr, buf, buf_len)) {
+//            return false;
+//        }
+//
+//        // Don't check for exit until after sending the screen...
+//        if (aid == 0xf3 /* PF3 */) {
+//            break;
+//        }
+//
+//        wait_for_request_in(chan);
+//
+//        printf("REQUEST IN...\n");
+//
+//        int result = chan_out_test(chan, addr);
+//
+//        if (result < 0) {
+//            printf("result = %d\n", result);
+//            return false;
+//        }
+//
+//        uint8_t status = chan_out_device_status(chan);
+//
+//        if (status == 0x00) {
+//            continue;
+//        }
+//
+//        printf("status = 0x%.2x\n", status);
+//
+//        if (status & CHAN_STATUS_ATTN) {
+//            printf("ATTN...\n");
+//
+//            if (!exec_read_modified(chan, addr, &aid)) {
+//                return false;
+//            }
+//        }
+//    }
 
     return true;
 }
 
-bool exec_basic_sense(struct chan_out *chan, uint8_t addr)
-{
-    printf("BASIC SENSE...\n");
-
-    uint8_t buf[32];
-
-    ssize_t result = chan_out_exec(chan, 0x60, 0x04 /* BASIC SENSE */, buf, 32);
-
-    if (result < 0) {
-        printf("\tresult = %zd\n", result);
-        return false;
-    }
-
-    uint8_t status = chan_out_device_status(chan);
-
-    printf("\tstatus = 0x%.2x\n", status);
-
-    size_t count = result;
-
-    printf("\tcount = %zu\n", count);
-
-    if (count < 1) {
-        printf("\texpected at least 1 byte, got %zu\n", count);
-        return false;
-    }
-
-    dump(buf, count);
-
-    return true;
-}
-
-bool exec_sense_id(struct chan_out *chan, uint8_t addr)
-{
-    printf("SENSE ID...\n");
-
-    uint8_t buf[7];
-
-    ssize_t result = chan_out_exec(chan, 0x60, 0xe4 /* SENSE ID */, buf, 7);
-
-    if (result < 0) {
-        printf("\tresult = %zd\n", result);
-        return false;
-    }
-
-    uint8_t status = chan_out_device_status(chan);
-
-    printf("\tstatus = 0x%.2x\n", status);
-
-    size_t count = result;
-
-    printf("\tcount = %zu\n", count);
-
-    if (count < 4) {
-        printf("\texpected at least 4 bytes, got %zu\n", count);
-        return false;
-    }
-
-    if (buf[0] != 0xff) {
-        printf("\texpected first byte to be 0xff, got 0x%.2x\n", buf[0]);
-        return false;
-    }
-
-    printf("\tCU = %.2x%.2x-%.2x\n", buf[1], buf[2], buf[3]);
-
-    return true;
-}
-
-bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len)
-{
-    printf("ERASE/WRITE...\n");
-
-    ssize_t result = chan_out_exec(chan, addr, 0x05 /* ERASE/WRITE */, buf, buf_len);
-
-    if (result < 0) {
-        printf("\tresult = %zd\n", result);
-        return false;
-    }
-
-    uint8_t status = chan_out_device_status(chan);
-
-    printf("\tstatus = 0x%.2x\n", status);
-
-    size_t count = result;
-
-    printf("\tcount = %zu\n", count);
-
-    if (count != buf_len) {
-        printf("\texpected to write %zu bytes, wrote %zu\n", buf_len, count);
-        return false;
-    }
-
-    return true;
-}
-
-bool exec_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid)
-{
-    printf("READ MODIFIED...\n");
-
-    uint8_t buf[64];
-
-    ssize_t result = chan_out_exec(chan, addr, 0x06 /* READ MODIFIED */, buf, 64);
-
-    if (result < 0) {
-        printf("\tresult = %zd\n", result);
-        return false;
-    }
-
-    uint8_t status = chan_out_device_status(chan);
-
-    printf("\tstatus = 0x%.2x\n", status);
-
-    size_t count = result;
-
-    printf("\tcount = %zu\n", count);
-
-    if (count < 1) {
-        printf("\texpected at least 1 byte, got %zu\n", count);
-        return false;
-    }
-
-    printf("\tAID = 0x%.2x\n", buf[0]);
-
-    if (aid != NULL) {
-        *aid = buf[0];
-    }
-
-    return true;
-}
-
-void wait_for_request_in(struct chan_out *chan)
-{
-    while (!chan_out_request_in(chan)) {
-        usleep(250000); // 250ms
-    }
-}
+//bool exec_nop(struct chan_out *chan, uint8_t addr)
+//{
+//    printf("NOP...\n");
+//
+//    ssize_t result = chan_out_exec(chan, addr, 0x03 /* NOP */, NULL, 0);
+//
+//    if (result < 0) {
+//        printf("\tresult = %zd\n", result);
+//        return false;
+//    }
+//
+//    uint8_t status = chan_out_device_status(chan);
+//
+//    printf("\tstatus = 0x%.2x\n", status);
+//
+//    return true;
+//}
+//
+//bool exec_basic_sense(struct chan_out *chan, uint8_t addr)
+//{
+//    printf("BASIC SENSE...\n");
+//
+//    uint8_t buf[32];
+//
+//    ssize_t result = chan_out_exec(chan, 0x60, 0x04 /* BASIC SENSE */, buf, 32);
+//
+//    if (result < 0) {
+//        printf("\tresult = %zd\n", result);
+//        return false;
+//    }
+//
+//    uint8_t status = chan_out_device_status(chan);
+//
+//    printf("\tstatus = 0x%.2x\n", status);
+//
+//    size_t count = result;
+//
+//    printf("\tcount = %zu\n", count);
+//
+//    if (count < 1) {
+//        printf("\texpected at least 1 byte, got %zu\n", count);
+//        return false;
+//    }
+//
+//    dump(buf, count);
+//
+//    return true;
+//}
+//
+//bool exec_sense_id(struct chan_out *chan, uint8_t addr)
+//{
+//    printf("SENSE ID...\n");
+//
+//    uint8_t buf[7];
+//
+//    ssize_t result = chan_out_exec(chan, 0x60, 0xe4 /* SENSE ID */, buf, 7);
+//
+//    if (result < 0) {
+//        printf("\tresult = %zd\n", result);
+//        return false;
+//    }
+//
+//    uint8_t status = chan_out_device_status(chan);
+//
+//    printf("\tstatus = 0x%.2x\n", status);
+//
+//    size_t count = result;
+//
+//    printf("\tcount = %zu\n", count);
+//
+//    if (count < 4) {
+//        printf("\texpected at least 4 bytes, got %zu\n", count);
+//        return false;
+//    }
+//
+//    if (buf[0] != 0xff) {
+//        printf("\texpected first byte to be 0xff, got 0x%.2x\n", buf[0]);
+//        return false;
+//    }
+//
+//    printf("\tCU = %.2x%.2x-%.2x\n", buf[1], buf[2], buf[3]);
+//
+//    return true;
+//}
+//
+//bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len)
+//{
+//    printf("ERASE/WRITE...\n");
+//
+//    ssize_t result = chan_out_exec(chan, addr, 0x05 /* ERASE/WRITE */, buf, buf_len);
+//
+//    if (result < 0) {
+//        printf("\tresult = %zd\n", result);
+//        return false;
+//    }
+//
+//    uint8_t status = chan_out_device_status(chan);
+//
+//    printf("\tstatus = 0x%.2x\n", status);
+//
+//    size_t count = result;
+//
+//    printf("\tcount = %zu\n", count);
+//
+//    if (count != buf_len) {
+//        printf("\texpected to write %zu bytes, wrote %zu\n", buf_len, count);
+//        return false;
+//    }
+//
+//    return true;
+//}
+//
+//bool exec_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid)
+//{
+//    printf("READ MODIFIED...\n");
+//
+//    uint8_t buf[64];
+//
+//    ssize_t result = chan_out_exec(chan, addr, 0x06 /* READ MODIFIED */, buf, 64);
+//
+//    if (result < 0) {
+//        printf("\tresult = %zd\n", result);
+//        return false;
+//    }
+//
+//    uint8_t status = chan_out_device_status(chan);
+//
+//    printf("\tstatus = 0x%.2x\n", status);
+//
+//    size_t count = result;
+//
+//    printf("\tcount = %zu\n", count);
+//
+//    if (count < 1) {
+//        printf("\texpected at least 1 byte, got %zu\n", count);
+//        return false;
+//    }
+//
+//    printf("\tAID = 0x%.2x\n", buf[0]);
+//
+//    if (aid != NULL) {
+//        *aid = buf[0];
+//    }
+//
+//    return true;
+//}
+//
+//void wait_for_request_in(struct chan_out *chan)
+//{
+//    while (!chan_out_request_in(chan)) {
+//        usleep(250000); // 250ms
+//    }
+//}
 
 size_t format_screen(uint8_t *buf, size_t buf_size, uint8_t aid)
 {

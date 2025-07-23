@@ -694,7 +694,6 @@ proc cr_bd_design_1 { parentCell } {
   connect_bd_net -net axi_mm_channel_out_0_a_select_out [get_bd_pins axi_mm_channel_out_0/a_select_out] [get_bd_pins axi_mock_cu_0/b_select_out] [get_bd_pins ila_0/probe4]
   connect_bd_net -net axi_mm_channel_out_0_a_service_out [get_bd_pins axi_mm_channel_out_0/a_service_out] [get_bd_pins axi_mock_cu_0/b_service_out] [get_bd_pins ila_0/probe7]
   connect_bd_net -net axi_mm_channel_out_0_a_suppress_out [get_bd_pins axi_mm_channel_out_0/a_suppress_out] [get_bd_pins axi_mock_cu_0/b_suppress_out] [get_bd_pins ila_0/probe8]
-  connect_bd_net -net axi_mm_channel_out_0_channel_active [get_bd_pins axi_mm_channel_out_0/channel_active] [get_bd_ports GPIO_0]
   connect_bd_net -net axi_mm_channel_out_0_frontend_enable [get_bd_pins axi_mm_channel_out_0/frontend_enable] [get_bd_ports GPIO_1] [get_bd_pins frontend_out_0/enable]
   connect_bd_net -net axi_mm_channel_out_0_wrap_tester_driver [get_bd_pins axi_mm_channel_out_0/wrap_tester_driver] [get_bd_pins wrap_tester_out_0/driver]
   connect_bd_net -net axi_mm_channel_out_0_wrap_tester_enable [get_bd_pins axi_mm_channel_out_0/wrap_tester_enable] [get_bd_pins wrap_tester_out_0/enable]

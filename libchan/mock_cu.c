@@ -11,11 +11,11 @@
 #define REG_CONTROL 0
 #define REG_STATUS 1
 
-int mock_cu_open(struct mock_cu *mock_cu, uintptr_t addr, int mem_fd)
+int mock_cu_open(struct mock_cu *mock_cu, uintptr_t base_addr, int mem_fd)
 {
-    mock_cu->addr = addr;
+    mock_cu->base_addr = base_addr;
 
-    if ((mock_cu->base = real_map(mock_cu->addr, REGS_SIZE, mem_fd)) == NULL) {
+    if ((mock_cu->base = real_map(mock_cu->base_addr, REGS_SIZE, mem_fd)) == NULL) {
         return -1;
     }
 
@@ -37,9 +37,9 @@ int mock_cu_close(struct mock_cu *mock_cu)
     return 0;
 }
 
-void mock_cu_arrange(struct mock_cu *mock_cu, bool busy, bool short_busy, uint16_t limit)
+void mock_cu_arrange(struct mock_cu *mock_cu, bool busy, bool short_busy, bool request, uint16_t limit)
 {
-    mock_cu->regs[REG_CONTROL] = (limit << 16) | (short_busy << 2) | (busy << 1);
+    mock_cu->regs[REG_CONTROL] = (limit << 16) | (request << 3) | (short_busy << 2) | (busy << 1);
 }
 
 bool mock_cu_assert(struct mock_cu *mock_cu, int8_t expected_command, int16_t expected_count)

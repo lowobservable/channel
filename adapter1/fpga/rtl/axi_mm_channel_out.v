@@ -145,6 +145,11 @@ module axi_mm_channel_out (
                     s_axi_rdata <= { 31'b0, channel_enable };
                 end
 
+                8'h04: // TODO: Temporary debug register
+                begin
+                    s_axi_rdata <= { channel_state, channel_error, 8'b0 };
+                end
+
                 REG_CHANNEL_3:
                 begin
                     s_axi_rdata <= { wrap_tester_driver, 3'b0, wrap_tester_enable, 7'b0, frontend_enable };
@@ -248,6 +253,13 @@ module axi_mm_channel_out (
                     wrap_tester_driver <= wdata[31:12];
                 end
 
+                REG_DEVICE_1:
+                begin
+                    // TODO: wstrb
+                    device_enable <= wdata[0];
+                    device_address <= wdata[31:24];
+                end
+
                 default:
                 begin
                     s_axi_bresp <= 2'b10; // SLVERR
@@ -278,10 +290,6 @@ module axi_mm_channel_out (
 
             channel_enable <= 0;
             device_enable <= 0;
-            status_pending <= 0;
-            status_stacked <= 0;
-            status_suppressed <= 0;
-            start_pending <= 0;
 
             frontend_enable <= 0;
 
@@ -335,6 +343,10 @@ module axi_mm_channel_out (
         .request(channel_request),
         .error(channel_error),
 
+        .a_bus_in(a_bus_in),
+        .a_bus_in_parity(a_bus_in_parity),
+        .a_bus_out(a_bus_out),
+        .a_bus_out_parity(a_bus_out_parity),
         .a_operational_out(a_operational_out),
         .a_request_in(a_request_in),
         .a_hold_out(a_hold_out),
@@ -355,204 +367,221 @@ module axi_mm_channel_out (
         channel_in_tvalid <= 0;
         channel_out_tready <= 0;
 
-        if (channel_error)
+        if (channel_error[0])
         begin
             // Something is going wrong...
         end
+        else if (!channel_enable)
+        begin
+            channel_state <= CHANNEL_STATE_IDLE;
 
-        case (channel_state)
-            CHANNEL_STATE_IDLE:
-            begin
-                if (!channel_enable)
+            status_pending <= 0;
+            status_stacked <= 0;
+            status_suppressed <= 0;
+            start_pending <= 0;
+        end
+        else
+        begin
+            case (channel_state)
+                CHANNEL_STATE_IDLE:
                 begin
-                    // Nothing should be happening, the channel should be held
-                    // in system reset.
-                end
-                else if (channel_request)
-                begin
-                    channel_state <= CHANNEL_STATE_REQUEST_1;
-                end
-                else if (!device_enable)
-                begin
-                    // Nothing to do, if a CU wants something we'd answer them
-                    // above.
-                end
-                else if (status_suppressed && !status_pending)
-                begin
-                    // Unsuppress that status, with TEST
-                end
-                // else if (start_pending)
-                // begin
-                //     if (status_pending)
-                //     begin
-                //         // Reject the takeoff
-                //     end
-                //     else
-                //     begin
-                //         -> START
-                //     end
-                // end
-            end
-
-            // CHANNEL_START:
-            // begin
-            //     // ...
-            // end
-
-            CHANNEL_STATE_REQUEST_1:
-            begin
-                channel_in_tdata <= 24'h010000; // XXX - Select Requestor
-                channel_in_tvalid <= 1;
-
-                if (channel_in_tready && channel_in_tvalid)
-                begin
-                    channel_in_tvalid <= 0;
-
-                    channel_state <= CHANNEL_STATE_REQUEST_2;
-                end
-            end
-
-            CHANNEL_STATE_REQUEST_2:
-            begin
-                channel_out_tready <= 1;
-
-                if (channel_out_tready && channel_out_tvalid)
-                begin
-                    channel_out_tready <= 0;
-
-                    if (channel_out_tdata == 24'h000000)
+                    if (channel_request)
                     begin
-                        // The requestor did not respond.
-                        channel_state <= CHANNEL_STATE_IDLE;
+                        channel_state <= CHANNEL_STATE_REQUEST_1;
                     end
-                    else if (channel_out_tdata[19:16] == 4'h3) // XXX - Connected
+                    else if (!device_enable)
+                    begin
+                        // Nothing to do, if a CU wants something we'd answer
+                        // them above.
+                    end
+                    else if (status_suppressed && !status_pending)
+                    begin
+                        // Unsuppress that status, with TEST
+                    end
+                    // else if (start_pending)
+                    // begin
+                    //     if (status_pending)
+                    //     begin
+                    //         // Reject the takeoff
+                    //     end
+                    //     else
+                    //     begin
+                    //         -> START
+                    //     end
+                    // end
+                end
+
+                // CHANNEL_START:
+                // begin
+                //     // ...
+                // end
+
+                CHANNEL_STATE_REQUEST_1:
+                begin
+                    channel_in_tdata <= 24'h010000; // XXX - Select Requestor
+                    channel_in_tvalid <= 1;
+
+                    if (channel_in_tready && channel_in_tvalid)
+                    begin
+                        channel_in_tvalid <= 0;
+
+                        channel_state <= CHANNEL_STATE_REQUEST_2;
+                    end
+                end
+
+                CHANNEL_STATE_REQUEST_2:
+                begin
+                    if (channel_connected)
                     begin
                         channel_state <= CHANNEL_STATE_CONNECTED;
                     end
-                    else
-                    begin
-                        channel_state <= CHANNEL_STATE_TODO;
-                    end
+
+                    // TODO: A seperate connected event may be required so we
+                    // can determine if the requestor did not respond.
+                    // Alternatavely we could try peeking when TVALID without
+                    // asserting TREADY but that would not be correct.
                 end
-            end
 
-            CHANNEL_STATE_CONNECTED:
-            begin
-                channel_out_tready <= 1;
-
-                // TODO: channel_burst <= no contention, probably
-
-                // TODO: !device_enable handling here is probably a little more
-                // complex than outlined... this works for the simple case where
-                // a device is enabled or disabled outside of a channel
-                // initiated operation.
-
-                if (channel_out_tready && channel_out_tvalid)
+                CHANNEL_STATE_CONNECTED:
                 begin
-                    channel_out_tready <= 0;
+                    channel_out_tready <= 1;
 
-                    if (channel_out_tdata[19:16] == 4'h1) // XXX - Status
+                    // TODO: channel_burst <= no contention, probably
+
+                    // TODO: !device_enable handling here is probably a little
+                    // more complex than outlined... this works for the simple
+                    // case where a device is enabled or disabled outside of
+                    // a channel initiated operation.
+
+                    if (channel_out_tready && channel_out_tvalid)
                     begin
-                        if (!channel_out_tdata[20])
+                        channel_out_tready <= 0;
+
+                        if (channel_out_tdata[19:16] == 4'h1) // XXX - Status
                         begin
-                            // Invalid parity...
+                            if (!channel_out_tdata[20])
+                            begin
+                                // Invalid parity...
+                                channel_state <= CHANNEL_STATE_TODO;
+                            end
+                            else if (channel_out_tdata[15:8] == device_address && device_enable && !status_pending)
+                            begin
+                                // Ok, we can accept the status...
+                                status <= channel_out_tdata[7:0];
+                                status_pending <= 1;
+                                status_stacked <= 0;
+                                status_suppressed <= 0;
+
+                                channel_state <= CHANNEL_STATE_ACCEPT_STATUS_1;
+                            end
+                            else if (!status_stacked)
+                            begin
+                                // We gotta stack that status.
+                                status_stacked <= 1;
+
+                                channel_state <= CHANNEL_STATE_STACK_STATUS_1;
+                            end
+                            else
+                            begin
+                                // We probably ned to suppress now.
+                                channel_state <= CHANNEL_STATE_TODO;
+                            end
+                        end
+                        // else if (channel_out_tdata[19:16] == 4'h2) // Data Service
+                        // begin
+                        //     // ...
+                        // end
+                        else
+                        begin
                             channel_state <= CHANNEL_STATE_TODO;
                         end
-                        else if (channel_out_tdata[15:8] == device_address && device_enable && !status_pending)
-                        begin
-                            // Ok, we can accept the status...
-                            status <= channel_out_tdata[7:0];
-                            status_pending <= 1;
-                            status_stacked <= 0;
-                            status_suppressed <= 0;
+                    end
+                    else if (!channel_connected)
+                    begin
+                        channel_state <= CHANNEL_STATE_IDLE;
+                    end
+                end
 
-                            channel_state <= CHANNEL_STATE_ACCEPT_STATUS_1;
+                CHANNEL_STATE_ACCEPT_STATUS_1:
+                begin
+                    channel_in_tdata <= 24'h020000; // XXX - Accept Status
+                    channel_in_tvalid <= 1;
+
+                    if (channel_in_tready && channel_in_tvalid)
+                    begin
+                        channel_in_tvalid <= 0;
+
+                        channel_state <= CHANNEL_STATE_ACCEPT_STATUS_2;
+                    end
+                end
+
+                CHANNEL_STATE_ACCEPT_STATUS_2:
+                begin
+                    channel_out_tready <= 1;
+
+                    if (channel_out_tready && channel_out_tvalid)
+                    begin
+                        channel_out_tready <= 0;
+
+                        if (channel_connected)
+                        begin
+                            channel_state <= CHANNEL_STATE_CONNECTED;
                         end
                         else
                         begin
-                            // We gotta stack that status.
-                            status_stacked <= 1;
-
-                            channel_state <= CHANNEL_STATE_STACK_STATUS_1;
+                            channel_state <= CHANNEL_STATE_IDLE;
                         end
                     end
-                    // else if (channel_out_tdata[19:16] == 4'h2) // Data Service
-                    // begin
-                    //     // ...
-                    // end
-                    else
+                end
+
+                CHANNEL_STATE_STACK_STATUS_1:
+                begin
+                    channel_in_tdata <= 24'h030000; // XXX - Stack Status
+                    channel_in_tvalid <= 1;
+
+                    if (channel_in_tready && channel_in_tvalid)
                     begin
-                        channel_state <= CHANNEL_STATE_TODO;
+                        channel_in_tvalid <= 0;
+
+                        channel_state <= CHANNEL_STATE_STACK_STATUS_2;
                     end
                 end
-                else if (!channel_connected)
+
+                CHANNEL_STATE_STACK_STATUS_2:
                 begin
-                    channel_state <= CHANNEL_STATE_IDLE;
+                    channel_out_tready <= 1;
+
+                    if (channel_out_tready && channel_out_tvalid)
+                    begin
+                        channel_out_tready <= 0;
+
+                        if (channel_connected)
+                        begin
+                            channel_state <= CHANNEL_STATE_CONNECTED;
+                        end
+                        else
+                        begin
+                            channel_state <= CHANNEL_STATE_IDLE;
+                        end
+                    end
                 end
-            end
 
-            CHANNEL_STATE_ACCEPT_STATUS_1:
-            begin
-                channel_in_tdata <= 24'h020000; // XXX - Accept Status
-                channel_in_tvalid <= 1;
-
-                if (channel_in_tready && channel_in_tvalid)
+                CHANNEL_STATE_TODO:
                 begin
-                    channel_in_tvalid <= 0;
-
-                    channel_state <= CHANNEL_STATE_ACCEPT_STATUS_2;
-                end
-            end
-
-            CHANNEL_STATE_ACCEPT_STATUS_2:
-            begin
-                channel_out_tready <= 1;
-
-                if (channel_out_tready && channel_out_tvalid)
-                begin
-                    channel_out_tready <= 0;
-
                     $display("TODO");
                     $finish;
                 end
-            end
-
-            CHANNEL_STATE_STACK_STATUS_1:
-            begin
-                channel_in_tdata <= 24'h030000; // XXX - Stack Status
-                channel_in_tvalid <= 1;
-
-                if (channel_in_tready && channel_in_tvalid)
-                begin
-                    channel_in_tvalid <= 0;
-
-                    channel_state <= CHANNEL_STATE_STACK_STATUS_2;
-                end
-            end
-
-            CHANNEL_STATE_STACK_STATUS_2:
-            begin
-                channel_out_tready <= 1;
-
-                if (channel_out_tready && channel_out_tvalid)
-                begin
-                    channel_out_tready <= 0;
-
-                    $display("TODO");
-                    $finish;
-                end
-            end
-
-            CHANNEL_STATE_TODO:
-            begin
-                $display("TODO");
-                $finish;
-            end
-        endcase
+            endcase
+        end
 
         if (!aresetn)
         begin
             channel_state <= CHANNEL_STATE_IDLE;
+
+            status_pending <= 0;
+            status_stacked <= 0;
+            status_suppressed <= 0;
+            start_pending <= 0;
         end
     end
 endmodule

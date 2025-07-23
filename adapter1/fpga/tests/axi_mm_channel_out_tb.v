@@ -84,6 +84,7 @@ module axi_mm_channel_out_tb;
 
     reg cu_mock_busy = 0;
     reg cu_mock_short_busy = 0;
+    reg cu_mock_request = 0;
     reg [15:0] cu_mock_limit = 0;
 
     mock_cu #(
@@ -129,6 +130,7 @@ module axi_mm_channel_out_tb;
 
         .mock_busy(cu_mock_busy),
         .mock_short_busy(cu_mock_short_busy),
+        .mock_request(cu_mock_request),
         .mock_limit(cu_mock_limit)
     );
 
@@ -149,6 +151,7 @@ module axi_mm_channel_out_tb;
         test_write_register;
         test_enable_disable_channel;
         test_wrap_tester;
+        test_enabled_device_async_status;
 
         $finish;
     end
@@ -242,6 +245,49 @@ module axi_mm_channel_out_tb;
         wait(!channel.wrap_tester_enable);
 
         $display("END: test_wrap_tester");
+    end
+    endtask
+
+    task test_enabled_device_async_status;
+        reg [31:0] data;
+        reg [1:0] resp;
+    begin
+        $display("START: test_enabled_device_async_status");
+
+        reset;
+
+        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 1;
+
+        @(posedge clk);
+
+        data = 32'b0;
+
+        while (!data[0])
+        begin
+            master_bfm.read(channel.REG_DEVICE_4, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (!data[0])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_high(data[0], "status should be pending");
+        `assert_equal(data[15:8], 8'h85, "status should be ATTN + DE + UX");
+
+        $display("END: test_enabled_device_async_status");
     end
     endtask
 

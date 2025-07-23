@@ -57,9 +57,11 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    chan_out_disable(&chan);
+
     bool result = wrap_test(&chan);
 
-    chan_out_close(&chan, true);
+    chan_out_close(&chan);
 
     close(mem_fd);
 

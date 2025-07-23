@@ -14,21 +14,19 @@
 #define REG_CHANNEL_1 0
 #define REG_CHANNEL_3 2
 #define REG_CHANNEL_4 3
-#define REG_CONTROL_2 4
-#define REG_DEVICE_1 5
-#define REG_DEVICE_2 6
-#define REG_DEVICE_3 7
-#define REG_DEVICE_4 8
+#define REG_DEVICE_1 4
+#define REG_DEVICE_2 5
+#define REG_DEVICE_3 6
+#define REG_DEVICE_4 7
 
-void config(struct chan_out *chan, bool enable, bool frontend_enable);
 static inline bool is_read_cmd(uint8_t cmd);
 static inline bool is_write_cmd(uint8_t cmd);
 
-int chan_out_open(struct chan_out *chan, uintptr_t addr, int mem_fd, char *udmabuf_path, bool frontend_enable)
+int chan_out_open(struct chan_out *chan, uintptr_t base_addr, int mem_fd, char *udmabuf_path, bool frontend_enable)
 {
-    chan->addr = addr;
+    chan->base_addr = base_addr;
 
-    if ((chan->base = real_map(chan->addr, REGS_SIZE, mem_fd)) == NULL) {
+    if ((chan->base = real_map(chan->base_addr, REGS_SIZE, mem_fd)) == NULL) {
         return -1;
     }
 
@@ -40,20 +38,20 @@ int chan_out_open(struct chan_out *chan, uintptr_t addr, int mem_fd, char *udmab
         return -1;
     }
 
-    config(chan, true, frontend_enable);
+    chan->regs[REG_CHANNEL_1] = false;
+    chan->regs[REG_CHANNEL_3] = frontend_enable;
 
     return 0;
 }
 
-int chan_out_close(struct chan_out *chan, bool disable)
+int chan_out_close(struct chan_out *chan)
 {
     if (chan == NULL) {
         return 0;
     }
 
-    if (disable) {
-        config(chan, false, false);
-    }
+    chan->regs[REG_CHANNEL_1] = false;
+    chan->regs[REG_CHANNEL_3] = false;
 
     int result = 0;
 
@@ -68,30 +66,36 @@ int chan_out_close(struct chan_out *chan, bool disable)
     return result;
 }
 
-int chan_out_test(struct chan_out *chan, uint8_t addr)
+int chan_out_enable(struct chan_out *chan)
 {
-    return -1;
-    //// Channel is active...
-    //if (chan->regs[REG_STATUS_1] & 0x01) {
-    //    return -2;
-    //}
+    chan->regs[REG_CHANNEL_1] = true;
 
-    //chan->regs[REG_CCW_1] = 0x00 /* TEST */ << 24;
-    //chan->regs[REG_CCW_2] = chan->udmabuf.addr;
+    return 0;
+}
 
-    //chan->regs[REG_CONTROL_2] = (addr << 24) | 0x01; // Start...
+int chan_out_disable(struct chan_out *chan)
+{
+    chan->regs[REG_CHANNEL_1] = false;
 
-    //while (chan->regs[REG_STATUS_1] & 0x01) {
-    //    usleep(100);
-    //}
+    return 0;
+}
 
-    //uint8_t condition_code = (uint8_t) ((chan->regs[REG_STATUS_1] & 0xc0) >> 6);
+int chan_out_config(struct chan_out *chan, uint8_t addr, bool enable)
+{
+    chan->regs[REG_DEVICE_1] = (addr << 24) | enable;
 
-    //if (condition_code != 0) {
-    //    return -3;
-    //}
+    return 0;
+}
 
-    //return 0;
+int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status)
+{
+    uint32_t reg = chan->regs[REG_DEVICE_4];
+
+    if (status != NULL) {
+        *status = (reg >> 8) & 0x000000ff;
+    }
+
+    return (reg & 0x01);
 }
 
 ssize_t chan_out_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
@@ -159,18 +163,6 @@ ssize_t chan_out_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t 
     //return actual_count;
 }
 
-uint8_t chan_out_device_status(struct chan_out *chan)
-{
-    return 0;
-    //return (uint8_t) (chan->regs[REG_STATUS_2] >> 24);
-}
-
-bool chan_out_request_in(struct chan_out *chan)
-{
-    return false;
-    //return chan->regs[REG_STATUS_1] & 0x02;
-}
-
 int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver)
 {
     // Channel must not be enabled during wrap test.
@@ -178,25 +170,19 @@ int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receive
         return -1;
     }
 
-    chan->regs[REG_CHANNEL_3] |= ((driver & 0x000fffff) << 12) | 0x0100;
+    chan->regs[REG_CHANNEL_3] = ((driver & 0x000fffff) << 12) | 0x00000100 | (chan->regs[REG_CHANNEL_3] & 0x000000ff);
 
     usleep(50000); // 50ms
 
     uint32_t value = (chan->regs[REG_CHANNEL_4] >> 12) & 0x000fffff;
 
-    chan->regs[REG_CHANNEL_3] &= ~0x0100;
+    chan->regs[REG_CHANNEL_3] &= ~0x00000100;
 
     if (receiver != NULL) {
         *receiver = value;
     }
 
-    return ~(value & driver);
-}
-
-void config(struct chan_out *chan, bool enable, bool frontend_enable)
-{
-    chan->regs[REG_CHANNEL_1] = enable;
-    chan->regs[REG_CHANNEL_3] = frontend_enable;
+    return (value ^ driver);
 }
 
 static inline bool is_read_cmd(uint8_t cmd)

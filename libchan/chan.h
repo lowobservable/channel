@@ -17,23 +17,25 @@
 #define CHAN_STATUS_UX      0x01    // Unit Exception
 
 struct chan_out {
-    uintptr_t addr;
+    uintptr_t base_addr;
     void *base;
     volatile uint32_t *regs;
     struct udmabuf udmabuf;
 };
 
-int chan_out_open(struct chan_out *chan, uintptr_t addr, int mem_fd, char *udmabuf_path, bool frontend_enable);
+int chan_out_open(struct chan_out *chan, uintptr_t base_addr, int mem_fd, char *udmabuf_path, bool frontend_enable);
 
-int chan_out_close(struct chan_out *chan, bool disable);
+int chan_out_close(struct chan_out *chan);
 
-int chan_out_test(struct chan_out *chan, uint8_t addr);
+int chan_out_enable(struct chan_out *chan);
+
+int chan_out_disable(struct chan_out *chan);
+
+int chan_out_config(struct chan_out *chan, uint8_t addr, bool enable);
+
+int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status);
 
 ssize_t chan_out_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count);
-
-uint8_t chan_out_device_status(struct chan_out *chan);
-
-bool chan_out_request_in(struct chan_out *chan);
 
 int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver);
 
