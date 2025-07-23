@@ -90,7 +90,8 @@ module axi_mm_channel_out (
     output reg [19:0] wrap_tester_driver,
     input wire [19:0] wrap_tester_receiver,
 
-    output wire debug
+    output wire debug_0,
+    output wire debug_1
 );
     parameter CLOCKS_PER_100_NS = 5; // 50 MHz clock period is 20 ns
 
@@ -584,4 +585,7 @@ module axi_mm_channel_out (
             start_pending <= 0;
         end
     end
+
+    assign debug_0 = frontend_enable;
+    assign debug_1 = channel_connected;
 endmodule
