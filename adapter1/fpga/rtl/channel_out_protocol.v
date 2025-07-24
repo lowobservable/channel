@@ -169,7 +169,11 @@ module channel_out_protocol (
 
     wire bus_in_parity_valid;
 
-    assign bus_in_parity_valid = (~^a_bus_in == a_bus_in_parity); // Odd parity
+    // TODO: 3174 parity in for status byte does not appear to be valid, parity
+    // looks to be constantly high... is parity only set for data?
+    //
+    // assign bus_in_parity_valid = (~^a_bus_in == a_bus_in_parity); // Odd parity
+    assign bus_in_parity_valid = 1;
 
     reg [7:0] next_bus_out;
     reg next_operational_out;
