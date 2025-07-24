@@ -151,7 +151,7 @@ module axi_mm_channel_out_tb;
         test_write_register;
         test_enable_disable_channel;
         test_wrap_tester;
-        test_enabled_device_async_status;
+        test_enabled_device_unsolicited_status;
 
         $finish;
     end
@@ -248,27 +248,34 @@ module axi_mm_channel_out_tb;
     end
     endtask
 
-    task test_enabled_device_async_status;
+    task test_enabled_device_unsolicited_status;
         reg [31:0] data;
         reg [1:0] resp;
     begin
-        $display("START: test_enabled_device_async_status");
+        $display("START: test_enabled_device_unsolicited_status");
 
         reset;
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        // Ensure that one-shot request mock is reset.
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
 
-        `assert_equal(resp, 2'b00, "write should be successful");
-
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
-
-        `assert_equal(resp, 2'b00, "write should be successful");
+        @(posedge clk);
 
         cu_mock_busy <= 0;
         cu_mock_short_busy <= 0;
         cu_mock_request <= 1;
 
         @(posedge clk);
+
+        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
 
         data = 32'b0;
 
@@ -287,7 +294,17 @@ module axi_mm_channel_out_tb;
         `assert_high(data[0], "status should be pending");
         `assert_equal(data[15:8], 8'h85, "status should be ATTN + DE + UX");
 
-        $display("END: test_enabled_device_async_status");
+        // Clear the pending status.
+        master_bfm.write(channel.REG_DEVICE_4, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        master_bfm.read(channel.REG_DEVICE_4, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+        `assert_low(data[0], "no status should be pending");
+
+        $display("END: test_enabled_device_unsolicited_status");
     end
     endtask
 

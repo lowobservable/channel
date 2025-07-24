@@ -109,6 +109,7 @@ module axi_mm_channel_out (
     reg device_enable;
     reg [7:0] status;
     reg status_pending;
+    reg clear_status_pending;
     reg status_stacked;
     reg status_suppressed;
     reg [7:0] command;
@@ -211,6 +212,9 @@ module axi_mm_channel_out (
 
     always @(posedge aclk)
     begin
+        // 1-clock pulses to communicate with channel state machine...
+        clear_status_pending <= 0;
+
         s_axi_awready <= !waddr_loaded && !s_axi_bvalid;
 
         if (s_axi_awvalid && s_axi_awready)
@@ -259,6 +263,15 @@ module axi_mm_channel_out (
                     // TODO: wstrb
                     device_enable <= wdata[0];
                     device_address <= wdata[31:24];
+                end
+
+                REG_DEVICE_4:
+                begin
+                    // TODO: wstrb
+                    if (wdata[0])
+                    begin
+                        clear_status_pending <= 1;
+                    end
                 end
 
                 default:
@@ -365,6 +378,11 @@ module axi_mm_channel_out (
 
     always @(posedge aclk)
     begin
+        if (clear_status_pending)
+        begin
+            status_pending <= 0;
+        end
+
         channel_in_tvalid <= 0;
         channel_out_tready <= 0;
 

@@ -91,11 +91,21 @@ int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status)
 {
     uint32_t reg = chan->regs[REG_DEVICE_4];
 
+    bool pending = (reg & 0x00000001);
+
+    if (!pending) {
+        return 0;
+    }
+
+    // Clear pending status, this must only be done if the read above resulted
+    // in pending status to avoid missing pending status.
+    chan->regs[REG_DEVICE_4] = 0x00000001;
+
     if (status != NULL) {
         *status = (reg >> 8) & 0x000000ff;
     }
 
-    return (reg & 0x01);
+    return pending;
 }
 
 ssize_t chan_out_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)

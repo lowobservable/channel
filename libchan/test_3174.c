@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include <iconv.h>
 
 #include <real.h>
@@ -47,6 +48,8 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    chan_out_enable(&chan);
+
     printf("READY\n");
 
     test(&chan, 0x60);
@@ -60,8 +63,60 @@ int main(void)
     return EXIT_SUCCESS;
 }
 
+volatile bool stop = false;
+
+void signal_handler(int signum)
+{
+    if (signum == SIGINT) {
+        stop = true;
+    }
+}
+
 bool test(struct chan_out *chan, uint8_t addr)
 {
+    signal(SIGINT, signal_handler);
+
+    chan_out_config(chan, addr, true);
+
+    bool device_online = false;
+
+    while (!stop) {
+        uint8_t status;
+
+        int result = chan_out_test(chan, addr, &status);
+
+        if (result < 0) {
+            printf("chan_out_test error: %d\n", result);
+            break;
+        }
+
+        if (result == 0) {
+            usleep(250000); // 250 ms
+            continue;
+        }
+
+        printf("status = 0x%.2x\n", status);
+
+        // NOTE: There doesn't appear to be a unsolicitated status when the
+        // device goes offline...
+
+        if (!device_online && status == CHAN_STATUS_DE) {
+            device_online = true;
+
+            printf("Device %.2x is online!\n", addr);
+        } else if (device_online && status == CHAN_STATUS_ATTN) {
+            printf("Device %.2x attention\n", addr);
+        }
+    }
+
+    signal(SIGINT, SIG_DFL);
+
+    printf("\n");
+
+    if (stop) {
+        printf("Stopped\n");
+    }
+
 //    while (true) {
 //        printf("TEST...\n");
 //

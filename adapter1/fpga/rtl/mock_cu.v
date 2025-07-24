@@ -47,7 +47,7 @@ module mock_cu (
     // ...
     input wire mock_busy,
     input wire mock_short_busy,
-    input wire mock_request,
+    input wire mock_request, // One-shot, the others aren't just yet...
     input wire [15:0] mock_limit,
 
     output reg [7:0] command,
@@ -143,9 +143,23 @@ module mock_cu (
 
     reg [7:0] status = 8'b0000_1100; // CE + DE
 
+    reg x_mock_request = 0;
+    reg prev_mock_request = 0;
+
     always @(posedge clk)
     begin
-        request_in <= mock_request;
+        if (mock_request && !prev_mock_request)
+        begin
+            x_mock_request <= mock_request;
+        end
+        else if (!mock_request)
+        begin
+            x_mock_request <= 0;
+        end
+
+        prev_mock_request <= mock_request;
+
+        request_in <= x_mock_request;
 
         if (operational_out)
         begin
@@ -178,7 +192,7 @@ module mock_cu (
                                 state <= 2;
                             end
                         end
-                        else if (!address_out && mock_request)
+                        else if (!address_out && x_mock_request)
                         begin
                             selection_y <= 1'b0; // Intercept the selection
 
@@ -214,6 +228,8 @@ module mock_cu (
                 83:
                 begin
                     operational_in <= 1;
+
+                    x_mock_request <= 0;
 
                     // Status requests only for now...
                     bus_in <= 8'b10000101; // ATTN + DE + UX: Device ready...

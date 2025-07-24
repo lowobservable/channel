@@ -14,7 +14,7 @@
 #include "chan.h"
 #include "mock_cu.h"
 
-bool test_enabled_device_async_status(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_enabled_device_unsolicited_status(struct chan_out *chan, struct mock_cu *mock_cu);
 //bool test_no_cu(struct chan_out *chan);
 //bool test_busy(struct chan_out *chan, struct mock_cu *mock_cu);
 //bool test_read_command(char *case_name, struct chan_out *chan, uint16_t count,
@@ -51,7 +51,7 @@ int main(void)
 
     printf("READY\n");
 
-    test_enabled_device_async_status(&chan, &mock_cu);
+    test_enabled_device_unsolicited_status(&chan, &mock_cu);
 
     //test_no_cu(&chan);
     //test_busy(&chan, &mock_cu);
@@ -71,15 +71,16 @@ int main(void)
     return EXIT_SUCCESS;
 }
 
-bool test_enabled_device_async_status(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_enabled_device_unsolicited_status(struct chan_out *chan, struct mock_cu *mock_cu)
 {
-    printf("TEST: test_enabled_device_async_status\n");
+    printf("TEST: test_enabled_device_unsolicited_status\n");
+
+    // Ensure that one-shot request mock is reset.
+    mock_cu_arrange(mock_cu, false, false, false, 0);
+    mock_cu_arrange(mock_cu, false, false, true, 0);
 
     chan_out_config(chan, 0xff, true);
-
     chan_out_enable(chan);
-
-    mock_cu_arrange(mock_cu, false, false, true, 0);
 
     int attempt;
     bool status_pending = false;
@@ -108,6 +109,11 @@ bool test_enabled_device_async_status(struct chan_out *chan, struct mock_cu *moc
 
     if (status != 0x85) {
         printf("FAIL: expected 0x85 status: 0x%.2x\n", status);
+        return false;
+    }
+
+    if (chan_out_test(chan, 0xff, NULL) != 0) {
+        printf("FAIL: expected no status pending\n");
         return false;
     }
 
