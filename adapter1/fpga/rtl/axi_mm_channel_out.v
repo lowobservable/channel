@@ -329,6 +329,7 @@ module axi_mm_channel_out (
 
             channel_enable <= 0;
             device_enable <= 0;
+            start_pending <= 0;
 
             frontend_enable <= 0;
 
@@ -340,7 +341,8 @@ module axi_mm_channel_out (
     reg [7:0] channel_state;
 
     localparam CHANNEL_STATE_IDLE = 0;
-    // CHANNEL_START
+    localparam CHANNEL_STATE_START_1 = 90;
+    localparam CHANNEL_STATE_START_2 = 91;
     localparam CHANNEL_STATE_REQUEST_1 = 1;
     localparam CHANNEL_STATE_REQUEST_2 = 2;
     localparam CHANNEL_STATE_CONNECTED = 3;
@@ -425,7 +427,6 @@ module axi_mm_channel_out (
             status_pending <= 0;
             status_stacked <= 0;
             status_suppressed <= 0;
-            start_pending <= 0;
         end
         else
         begin
@@ -436,34 +437,52 @@ module axi_mm_channel_out (
                     begin
                         channel_state <= CHANNEL_STATE_REQUEST_1;
                     end
+                    else if (start_pending)
+                    begin
+                        if (!device_enable)
+                        begin
+                            condition_code <= 4'h1; // XXX - Device Disabled
+                            clear_start_pending <= 1;
+                        end
+                        else if (status_pending)
+                        begin
+                            // Reject the takeoff.
+                            condition_code <= 4'h3; // XXX - Status Pending
+                            clear_start_pending <= 1;
+                        end
+                        else
+                        begin
+                            channel_state <= CHANNEL_STATE_START_1;
+                        end
+                    end
                     else if (!device_enable)
                     begin
-                        // Nothing to do, if a CU wants something we'd answer
-                        // them above.
+                        // Nothing to do, if a CU wants something we would
+                        // answer them above.
                     end
                     else if (status_suppressed && !status_pending)
                     begin
                         // Unsuppress that status, with TEST
                     end
-                    else if (start_pending)
+                end
+
+                CHANNEL_STATE_START_1:
+                begin
+                    channel_in_tdata <= { 8'h11, device_address, command }; // XXX - Initial Selection
+                    channel_in_tvalid <= 1;
+
+                    if (channel_in_tready && channel_in_tvalid)
                     begin
-                        if (status_pending)
-                        begin
-                            // Reject the takeoff.
-                            condition_code <= 4'h1;
-                            clear_start_pending <= 1;
-                        end
-                        else
-                        begin
-                            channel_state <= CHANNEL_STATE_TODO;
-                        end
+                        channel_in_tvalid <= 0;
+
+                        channel_state <= CHANNEL_STATE_START_2;
                     end
                 end
 
-                // CHANNEL_START:
-                // begin
-                //     // ...
-                // end
+                CHANNEL_STATE_START_2:
+                begin
+                    //
+                end
 
                 CHANNEL_STATE_REQUEST_1:
                 begin
@@ -630,7 +649,6 @@ module axi_mm_channel_out (
             status_pending <= 0;
             status_stacked <= 0;
             status_suppressed <= 0;
-            start_pending <= 0;
         end
     end
 
