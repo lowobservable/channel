@@ -343,6 +343,7 @@ module axi_mm_channel_out (
     localparam CHANNEL_STATE_IDLE = 0;
     localparam CHANNEL_STATE_START_1 = 90;
     localparam CHANNEL_STATE_START_2 = 91;
+    localparam CHANNEL_STATE_START_3 = 92;
     localparam CHANNEL_STATE_REQUEST_1 = 1;
     localparam CHANNEL_STATE_REQUEST_2 = 2;
     localparam CHANNEL_STATE_CONNECTED = 3;
@@ -481,7 +482,47 @@ module axi_mm_channel_out (
 
                 CHANNEL_STATE_START_2:
                 begin
-                    //
+                    channel_out_tready <= 1;
+
+                    if (channel_out_tready && channel_out_tvalid)
+                    begin
+                        channel_out_tready <= 0;
+
+                        if (channel_out_tdata[19:16] == 4'h1) // XXX - Status
+                        begin
+                            if (!channel_out_tdata[20])
+                            begin
+                                // Invalid parity...
+                                channel_state <= CHANNEL_STATE_TODO;
+                            end
+                            else if (channel_out_tdata[15:8] == device_address && channel_out_tdata[23])
+                            begin
+                                // Defer handling of status until next state.
+                                status <= channel_out_tdata[7:0];
+
+                                channel_state <= CHANNEL_STATE_START_3;
+                            end
+                        end
+                        else if (channel_out_tdata[23:16] == 8'hff) // XXX - Error
+                        begin
+                            if (channel_out_tdata[15:8] == 8'h02)
+                            begin
+                                condition_code <= 4'h2; // XXX - Device Not Operational
+                                clear_start_pending <= 1;
+
+                                channel_state <= CHANNEL_STATE_IDLE;
+                            end
+                            else
+                            begin
+                                channel_state <= CHANNEL_STATE_TODO;
+                            end
+                        end
+                    end
+                end
+
+                CHANNEL_STATE_START_3:
+                begin
+                    // ...
                 end
 
                 CHANNEL_STATE_REQUEST_1:
