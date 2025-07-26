@@ -279,30 +279,30 @@ module axi_mm_channel_out_tb;
 
         data = 32'b0;
 
-        while (!data[0])
+        while (!data[13])
         begin
-            master_bfm.read(channel.REG_DEVICE_4, data, resp);
+            master_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
-            if (!data[0])
+            if (!data[13])
             begin
                 repeat (100) @(posedge clk);
             end
         end
 
-        `assert_high(data[0], "status should be pending");
-        `assert_equal(data[15:8], 8'h85, "status should be ATTN + DE + UX");
+        `assert_high(data[13], "status should be pending");
+        `assert_equal(data[23:16], 8'h85, "status should be ATTN + DE + UX");
 
         // Clear the pending status.
-        master_bfm.write(channel.REG_DEVICE_4, 32'h00000001, resp);
+        master_bfm.write(channel.REG_DEVICE_2, 32'h00002000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.read(channel.REG_DEVICE_4, data, resp);
+        master_bfm.read(channel.REG_DEVICE_2, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
-        `assert_low(data[0], "no status should be pending");
+        `assert_low(data[13], "no status should be pending");
 
         $display("END: test_enabled_device_unsolicited_status");
     end

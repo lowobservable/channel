@@ -89,9 +89,9 @@ int chan_out_config(struct chan_out *chan, uint8_t addr, bool enable)
 
 int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status)
 {
-    uint32_t reg = chan->regs[REG_DEVICE_4];
+    uint32_t reg = chan->regs[REG_DEVICE_2];
 
-    bool pending = (reg & 0x00000001);
+    bool pending = (reg & 0x00002000);
 
     if (!pending) {
         return 0;
@@ -99,10 +99,10 @@ int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status)
 
     // Clear pending status, this must only be done if the read above resulted
     // in pending status to avoid missing pending status.
-    chan->regs[REG_DEVICE_4] = 0x00000001;
+    chan->regs[REG_DEVICE_2] = 0x00002000;
 
     if (status != NULL) {
-        *status = (reg >> 8) & 0x000000ff;
+        *status = (reg >> 16) & 0x000000ff;
     }
 
     return pending;

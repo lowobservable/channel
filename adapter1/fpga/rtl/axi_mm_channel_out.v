@@ -118,16 +118,18 @@ module axi_mm_channel_out (
 
     // The control interface...
     //
-    // ---- ---- | ---- ---- | ---- ---- | ---- ----
-    //           |           |           |         E <- "Channel enable"
-    //           |           |           |
-    // DDDD DDDD | DDDD DDDD | DDDD    W |         F <- Frontend enable
-    // RRRR RRRR | RRRR RRRR | RRRR    ^--------------- Wrap tester enable
-    // ---- ---- | ---- ---- | ---- ---- | ---- ----
-    // AAAA AAAA |           |           |         E <- "Device enable"
-    //           |           |           |         S <- Start
-    //           | NNNN NNNN | NNNN NNNN | CCCC CCCC
-    //           |           | SSSS SSSS |       RTP <- Supr... / Stack... / Pending
+    //     ---- ---- | ---- ---- | ---- ---- | ---- ----
+    // C1:           |           |           |         E <- "Channel enable"
+    //               |           |           |
+    // C3: DDDD DDDD | DDDD DDDD | DDDD    W |         F <- Frontend enable
+    // C4: RRRR RRRR | RRRR RRRR | RRRR    ^--------------- Wrap tester enable
+    //     ---- ---- | ---- ---- | ---- ---- | ---- ----
+    // D1: AAAA AAAA |           |           |         E <- "Device enable"
+    // D2:           | SSSS SSSS | RTPA      | CCCC    S <- Start / Start Pending
+    //                             ^^^^-------------------- Active
+    //                             +++--------------------- Supr'd / Stack'd / Pending
+    // D3: AAAA AAAA | AAAA AAAA | AAAA AAAA | AAAA AAAA <- Storage address
+    // D4:           | NNNN NNNN | NNNN NNNN | CCCC CCCC
     //
     always @(posedge aclk)
     begin
@@ -169,17 +171,17 @@ module axi_mm_channel_out (
 
                 REG_DEVICE_2:
                 begin
-                    s_axi_rdata <= { 31'b0, start_pending };
+                    s_axi_rdata <= { 8'b0, status, status_suppressed, status_stacked, status_pending, 12'b0, start_pending };
                 end
 
                 REG_DEVICE_3:
                 begin
-                    s_axi_rdata <= { 8'b0, count, command };
+                    s_axi_rdata <= 32'b0;
                 end
 
                 REG_DEVICE_4:
                 begin
-                    s_axi_rdata <= { 16'b0, status, 5'b0, status_suppressed, status_stacked, status_pending };
+                    s_axi_rdata <= { 8'b0, count, command };
                 end
 
                 default:
@@ -265,10 +267,10 @@ module axi_mm_channel_out (
                     device_address <= wdata[31:24];
                 end
 
-                REG_DEVICE_4:
+                REG_DEVICE_2:
                 begin
                     // TODO: wstrb
-                    if (wdata[0])
+                    if (wdata[13])
                     begin
                         clear_status_pending <= 1;
                     end
