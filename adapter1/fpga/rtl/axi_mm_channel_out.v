@@ -497,7 +497,7 @@ module axi_mm_channel_out (
                             end
                             else if (channel_out_tdata[15:8] == device_address && channel_out_tdata[23])
                             begin
-                                // Defer handling of status until next state.
+                                // Defer handling of initial status.
                                 status <= channel_out_tdata[7:0];
 
                                 channel_state <= CHANNEL_STATE_START_3;
@@ -522,7 +522,22 @@ module axi_mm_channel_out (
 
                 CHANNEL_STATE_START_3:
                 begin
-                    // ...
+                    clear_start_pending <= 1;
+
+                    if (status == 8'h00) // Accepted
+                    begin
+                        channel_state <= CHANNEL_STATE_TODO;
+                    end
+                    else if (status[4]) // Busy
+                    begin
+                        condition_code <= 4'h4; // XXX - Device Busy
+
+                        channel_state <= CHANNEL_STATE_IDLE;
+                    end
+                    else
+                    begin
+                        channel_state <= CHANNEL_STATE_TODO;
+                    end
                 end
 
                 CHANNEL_STATE_REQUEST_1:
