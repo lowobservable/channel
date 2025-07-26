@@ -115,6 +115,8 @@ module axi_mm_channel_out (
     reg [7:0] command;
     reg [15:0] count;
     reg start_pending;
+    reg clear_start_pending;
+    reg [3:0] condition_code;
 
     // The control interface...
     //
@@ -171,7 +173,7 @@ module axi_mm_channel_out (
 
                 REG_DEVICE_2:
                 begin
-                    s_axi_rdata <= { 8'b0, status, status_suppressed, status_stacked, status_pending, 12'b0, start_pending };
+                    s_axi_rdata <= { 8'b0, status, status_suppressed, status_stacked, status_pending, 5'b0, condition_code, 3'b0, start_pending };
                 end
 
                 REG_DEVICE_3:
@@ -216,6 +218,11 @@ module axi_mm_channel_out (
     begin
         // 1-clock pulses to communicate with channel state machine...
         clear_status_pending <= 0;
+
+        if (clear_start_pending)
+        begin
+            start_pending <= 0;
+        end
 
         s_axi_awready <= !waddr_loaded && !s_axi_bvalid;
 
@@ -270,10 +277,26 @@ module axi_mm_channel_out (
                 REG_DEVICE_2:
                 begin
                     // TODO: wstrb
+                    if (wdata[0])
+                    begin
+                        // TODO: Should not be allowed if start is pending.
+                        start_pending <= 1;
+                    end
+
                     if (wdata[13])
                     begin
                         clear_status_pending <= 1;
                     end
+                end
+
+                REG_DEVICE_3:
+                begin
+                    // TODO: Storage address not used yet
+                end
+
+                REG_DEVICE_4:
+                begin
+                    // TODO: Command and count not used yet
                 end
 
                 default:
@@ -380,6 +403,9 @@ module axi_mm_channel_out (
 
     always @(posedge aclk)
     begin
+        // 1-clock pulses to communicate with channel state machine...
+        clear_start_pending <= 0;
+
         if (clear_status_pending)
         begin
             status_pending <= 0;
@@ -419,17 +445,19 @@ module axi_mm_channel_out (
                     begin
                         // Unsuppress that status, with TEST
                     end
-                    // else if (start_pending)
-                    // begin
-                    //     if (status_pending)
-                    //     begin
-                    //         // Reject the takeoff
-                    //     end
-                    //     else
-                    //     begin
-                    //         -> START
-                    //     end
-                    // end
+                    else if (start_pending)
+                    begin
+                        if (status_pending)
+                        begin
+                            // Reject the takeoff.
+                            condition_code <= 4'h1;
+                            clear_start_pending <= 1;
+                        end
+                        else
+                        begin
+                            channel_state <= CHANNEL_STATE_TODO;
+                        end
+                    end
                 end
 
                 // CHANNEL_START:
