@@ -107,6 +107,8 @@ module axi_mm_channel_out (
 
     reg [7:0] device_address;
     reg device_enable;
+    reg subchannel_active;
+    reg device_active;
     reg [7:0] status;
     reg status_pending;
     reg clear_status_pending;
@@ -127,11 +129,11 @@ module axi_mm_channel_out (
     // C4: RRRR RRRR | RRRR RRRR | RRRR    ^--------------- Wrap tester enable
     //     ---- ---- | ---- ---- | ---- ---- | ---- ----
     // D1: AAAA AAAA |           |           |         E <- "Device enable"
-    // D2:           | SSSS SSSS | RTPA      | CCCC    S <- Start / Start Pending
-    //                             ^^^^-------------------- Active
+    // D2:           | SSSS SSSS | RTP    BA | CCCC    S <- Start / Start Pending
+    //                             ^^^    ^^--------------- Active
     //                             +++--------------------- Supr'd / Stack'd / Pending
     // D3: AAAA AAAA | AAAA AAAA | AAAA AAAA | AAAA AAAA <- Storage address
-    // D4:           | NNNN NNNN | NNNN NNNN | CCCC CCCC
+    // D4: NNNN NNNN | NNNN NNNN |           | CCCC CCCC
     //
     always @(posedge aclk)
     begin
@@ -173,7 +175,7 @@ module axi_mm_channel_out (
 
                 REG_DEVICE_2:
                 begin
-                    s_axi_rdata <= { 8'b0, status, status_suppressed, status_stacked, status_pending, 5'b0, condition_code, 3'b0, start_pending };
+                    s_axi_rdata <= { 8'b0, status, status_suppressed, status_stacked, status_pending, 3'b0, subchannel_active, device_active, condition_code, 3'b0, start_pending };
                 end
 
                 REG_DEVICE_3:
@@ -183,7 +185,7 @@ module axi_mm_channel_out (
 
                 REG_DEVICE_4:
                 begin
-                    s_axi_rdata <= { 8'b0, count, command };
+                    s_axi_rdata <= { count, 8'b0, command };
                 end
 
                 default:
@@ -296,7 +298,9 @@ module axi_mm_channel_out (
 
                 REG_DEVICE_4:
                 begin
-                    // TODO: Command and count not used yet
+                    // TODO: wstrb
+                    command <= wdata[7:0];
+                    count <= wdata[31:16];
                 end
 
                 default:
@@ -438,7 +442,17 @@ module axi_mm_channel_out (
                     begin
                         channel_state <= CHANNEL_STATE_REQUEST_1;
                     end
-                    else if (start_pending)
+                    else if (device_enable && status_stacked && !status_pending)
+                    begin
+                        // Wait... the device should request service, this
+                        // should ensure that any stacked status is made pending
+                        // before a start is handled.
+                    end
+                    else if (device_enable && status_suppressed && !status_pending)
+                    begin
+                        // Unsuppress that status, with TEST
+                    end
+                    else if (start_pending && !clear_start_pending)
                     begin
                         if (!device_enable)
                         begin
@@ -456,19 +470,12 @@ module axi_mm_channel_out (
                             channel_state <= CHANNEL_STATE_START_1;
                         end
                     end
-                    else if (!device_enable)
-                    begin
-                        // Nothing to do, if a CU wants something we would
-                        // answer them above.
-                    end
-                    else if (status_suppressed && !status_pending)
-                    begin
-                        // Unsuppress that status, with TEST
-                    end
                 end
 
                 CHANNEL_STATE_START_1:
                 begin
+                    // TODO: channel_burst <= no contention, probably
+
                     channel_in_tdata <= { 8'h11, device_address, command }; // XXX - Initial Selection
                     channel_in_tvalid <= 1;
 
@@ -522,13 +529,10 @@ module axi_mm_channel_out (
 
                 CHANNEL_STATE_START_3:
                 begin
+                    condition_code <= 4'h0; // XXX - Started
                     clear_start_pending <= 1;
 
-                    if (status == 8'h00) // Accepted
-                    begin
-                        channel_state <= CHANNEL_STATE_TODO;
-                    end
-                    else if (status[4]) // Busy
+                    if (status[4]) // Busy
                     begin
                         condition_code <= 4'h4; // XXX - Device Busy
 
@@ -536,12 +540,29 @@ module axi_mm_channel_out (
                     end
                     else
                     begin
-                        channel_state <= CHANNEL_STATE_TODO;
+                        if (status != 8'h00) // Accepted
+                        begin
+                            status_pending <= 1;
+                        end
+
+                        subchannel_active <= !status[3]; // Channel End
+                        device_active <= !status[2]; // Device End
+
+                        if (!status[3])
+                        begin
+                            channel_state <= CHANNEL_STATE_CONNECTED;
+                        end
+                        else
+                        begin
+                            channel_state <= CHANNEL_STATE_IDLE;
+                        end
                     end
                 end
 
                 CHANNEL_STATE_REQUEST_1:
                 begin
+                    // TODO: channel_burst <= no contention, probably
+
                     channel_in_tdata <= 24'h010000; // XXX - Select Requestor
                     channel_in_tvalid <= 1;
 
@@ -701,6 +722,9 @@ module axi_mm_channel_out (
         if (!aresetn)
         begin
             channel_state <= CHANNEL_STATE_IDLE;
+
+            subchannel_active <= 0;
+            device_active <= 0;
 
             status_pending <= 0;
             status_stacked <= 0;
