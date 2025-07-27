@@ -154,11 +154,6 @@ module channel_out_protocol_tb;
         test_write_command_channel_stop;
         test_request_status_accept;
 
-        /*
-        test_nop_command;
-        test_invalid_command;
-        */
-
         $finish;
     end
 

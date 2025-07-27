@@ -459,6 +459,13 @@ module axi_mm_channel_out (
                             condition_code <= 4'h1; // XXX - Device Disabled
                             clear_start_pending <= 1;
                         end
+                        else if (device_active)
+                        begin
+                            // NOTE: This is probably not necessary, the initial
+                            // selection should indicate busy in these cases.
+                            condition_code <= 4'h4; // XXX - Device Busy
+                            clear_start_pending <= 1;
+                        end
                         else if (status_pending)
                         begin
                             // Reject the takeoff.

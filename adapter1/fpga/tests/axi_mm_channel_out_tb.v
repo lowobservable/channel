@@ -307,7 +307,7 @@ module axi_mm_channel_out_tb;
         master_bfm.read(channel.REG_DEVICE_2, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
-        `assert_low(data[13], "no status should be pending");
+        `assert_low(data[13], "not status pending");
 
         $display("END: test_unsolicited_status_device_enabled");
     end
@@ -612,7 +612,7 @@ module axi_mm_channel_out_tb;
         master_bfm.read(channel.REG_DEVICE_2, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
-        `assert_low(data[13], "no status should be pending");
+        `assert_low(data[13], "not status pending");
 
         $display("END: test_start_immediate_command");
     end
