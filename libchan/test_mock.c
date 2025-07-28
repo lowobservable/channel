@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 #include <real.h>
 #include <util.h>
@@ -14,14 +15,12 @@
 #include "chan.h"
 #include "mock_cu.h"
 
-bool test_enabled_device_unsolicited_status(struct chan_out *chan, struct mock_cu *mock_cu);
-//bool test_no_cu(struct chan_out *chan);
-//bool test_busy(struct chan_out *chan, struct mock_cu *mock_cu);
-//bool test_read_command(char *case_name, struct chan_out *chan, uint16_t count,
-//         struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
-//bool test_write_command(char *case_name, struct chan_out *chan, uint16_t count,
-//         struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
-//bool test_nop_command(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_unsolicited_status_device_enabled(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_exec_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_exec_device_not_operational(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_exec_device_busy(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_exec_immediate_command(struct chan_out *chan, struct mock_cu *mock_cu);
 
 void buf_arrange(uint8_t *buf, size_t count);
 bool buf_assert(uint8_t *buf, size_t count);
@@ -51,16 +50,12 @@ int main(void)
 
     printf("READY\n");
 
-    test_enabled_device_unsolicited_status(&chan, &mock_cu);
-
-    //test_no_cu(&chan);
-    //test_busy(&chan, &mock_cu);
-    //test_read_command("read_command_cu_more", &chan, 6, &mock_cu, 16, 6);
-    //test_read_command("read_command_cu_less", &chan, 16, &mock_cu, 6, 6);
-    //test_write_command("write_command_cu_more", &chan, 6, &mock_cu, 16, 6);
-    //test_write_command("write_command_cu_less", &chan, 16, &mock_cu, 6, 6);
-    //test_read_command("big_read", &chan, 512, &mock_cu, 512, 512);
-    //test_nop_command(&chan, &mock_cu);
+    test_unsolicited_status_device_enabled(&chan, &mock_cu);
+    test_exec_device_disabled(&chan, &mock_cu);
+    test_exec_device_not_operational(&chan, &mock_cu);
+    test_exec_status_pending(&chan, &mock_cu);
+    test_exec_device_busy(&chan, &mock_cu);
+    test_exec_immediate_command(&chan, &mock_cu);
 
     mock_cu_close(&mock_cu);
 
@@ -71,9 +66,9 @@ int main(void)
     return EXIT_SUCCESS;
 }
 
-bool test_enabled_device_unsolicited_status(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_unsolicited_status_device_enabled(struct chan_out *chan, struct mock_cu *mock_cu)
 {
-    printf("TEST: test_enabled_device_unsolicited_status\n");
+    printf("TEST: test_unsolicited_status_device_enabled\n");
 
     // Ensure that one-shot request mock is reset.
     mock_cu_arrange(mock_cu, false, false, false, 0);
@@ -99,7 +94,7 @@ bool test_enabled_device_unsolicited_status(struct chan_out *chan, struct mock_c
             return false;
         }
 
-        usleep(50000); // 50ms
+        usleep(1000); // 1ms
     }
 
     if (!status_pending) {
@@ -122,154 +117,138 @@ bool test_enabled_device_unsolicited_status(struct chan_out *chan, struct mock_c
     return true;
 }
 
-//bool test_no_cu(struct chan_out *chan)
-//{
-//    printf("TEST: test_no_cu\n");
-//
-//    ssize_t result = chan_out_exec(chan, 0x10, 0x03 /* NOP */, NULL, 0);
-//
-//    if (result != -3) {
-//        printf("FAIL: expected not operational condition code\n");
-//        return false;
-//    }
-//
-//    printf("PASS\n");
-//
-//    return true;
-//}
-//
-//bool test_busy(struct chan_out *chan, struct mock_cu *mock_cu)
-//{
-//    printf("TEST: test_busy\n");
-//
-//    mock_cu_arrange(mock_cu, true, false, 0);
-//
-//    ssize_t result = chan_out_exec(chan, 0xff, 0x03 /* NOP */, NULL, 0);
-//
-//    if (result != -4) {
-//        printf("FAIL: expected busy result\n");
-//        return false;
-//    }
-//
-//    uint8_t status = chan_out_device_status(chan);
-//
-//    if (!(status & CHAN_STATUS_BUSY)) {
-//        printf("FAIL: expected busy status\n");
-//        return false;
-//    }
-//
-//    printf("PASS\n");
-//
-//    return true;
-//}
-//
-//bool test_read_command(char *case_name, struct chan_out *chan, uint16_t count,
-//        struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
-//{
-//    printf("TEST: %s\n", case_name);
-//
-//    udmabuf_clear(&chan->udmabuf, 0);
-//
-//    mock_cu_arrange(mock_cu, false, false, mock_cu_limit);
-//
-//    uint8_t cmd = 0x02; // READ
-//
-//    uint8_t buf[1024];
-//
-//    ssize_t result = chan_out_exec(chan, 0xff, cmd, buf, count);
-//
-//    if (result < 0) {
-//        printf("FAIL: unable to start channel\n");
-//        return false;
-//    }
-//
-//    if (result != expected_count) {
-//        printf("FAIL: expected to receive %d bytes, received %zd\n", expected_count, result);
-//        return false;
-//    }
-//
-//    if (!mock_cu_assert(mock_cu, cmd, expected_count)) {
-//        printf("FAIL: mock CU assertions failed\n");
-//        return false;
-//    }
-//
-//    if (!buf_assert(buf, result)) {
-//        printf("FAIL: data received did not match expected data:\n");
-//        dump(buf, result);
-//        return false;
-//    }
-//
-//    printf("PASS\n");
-//
-//    return true;
-//}
-//
-//bool test_write_command(char *case_name, struct chan_out *chan, uint16_t count,
-//        struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
-//{
-//    printf("TEST: %s\n", case_name);
-//
-//    udmabuf_clear(&chan->udmabuf, 0);
-//
-//    mock_cu_arrange(mock_cu, false, false, mock_cu_limit);
-//
-//    uint8_t cmd = 0x01; // WRITE
-//
-//    uint8_t buf[1024];
-//
-//    buf_arrange(buf, count);
-//
-//    ssize_t result = chan_out_exec(chan, 0xff, cmd, buf, count);
-//
-//    if (result < 0) {
-//        printf("FAIL: unable to start channel\n");
-//        return false;
-//    }
-//
-//    if (result != expected_count) {
-//        printf("FAIL: expected to send %d bytes, sent %zd\n", expected_count, result);
-//        return false;
-//    }
-//
-//    if (!mock_cu_assert(mock_cu, cmd, expected_count)) {
-//        printf("FAIL: mock CU assertions failed\n");
-//        return false;
-//    }
-//
-//    printf("PASS\n");
-//
-//    return true;
-//}
-//
-//bool test_nop_command(struct chan_out *chan, struct mock_cu *mock_cu)
-//{
-//    printf("TEST: test_nop_command\n");
-//
-//    mock_cu_arrange(mock_cu, false, false, 0);
-//
-//    uint8_t cmd = 0x03; // NOP
-//
-//    ssize_t result = chan_out_exec(chan, 0xff, cmd, NULL, 0);
-//
-//    if (result < 0) {
-//        printf("FAIL: unable to start channel\n");
-//        return false;
-//    }
-//
-//    if (result != 0) {
-//        printf("FAIL: expected to receive 0 bytes, received %zd\n", result);
-//        return false;
-//    }
-//
-//    if (!mock_cu_assert(mock_cu, cmd, 0)) {
-//        printf("FAIL: mock CU assertions failed\n");
-//        return false;
-//    }
-//
-//    printf("PASS\n");
-//
-//    return true;
-//}
+bool test_exec_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_exec_device_disabled\n");
+
+    mock_cu_arrange(mock_cu, false, false, false, 0);
+
+    chan_out_enable(chan);
+    chan_out_config(chan, 0xff, false);
+
+    ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
+
+    if (result != -3) {
+        printf("FAIL: expected device disabled: %zd\n", result);
+        return false;
+    }
+
+    printf("PASS\n");
+
+    return true;
+}
+
+bool test_exec_device_not_operational(struct chan_out *chan, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_exec_device_not_operational\n");
+
+    mock_cu_arrange(mock_cu, false, false, false, 0);
+
+    chan_out_enable(chan);
+    chan_out_config(chan, 0x1b, true);
+
+    ssize_t result = chan_exec(chan, 0x1b, CHAN_CMD_NOP, 0, NULL, 0, NULL);
+
+    if (result != -4) {
+        printf("FAIL: expected device not operational: %zd\n", result);
+        return false;
+    }
+
+    printf("PASS\n");
+
+    return true;
+}
+
+bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_exec_status_pending\n");
+
+    // Ensure that one-shot request mock is reset.
+    mock_cu_arrange(mock_cu, false, false, false, 0);
+    mock_cu_arrange(mock_cu, false, false, true, 0);
+
+    chan_out_config(chan, 0xff, true);
+    chan_out_enable(chan);
+
+    int attempt;
+    bool status_pending = false;
+
+    for (attempt = 1; attempt <= 5; attempt++) {
+        if (chan->regs[5] & 0x00002000) {
+            status_pending = true;
+            break;
+        }
+
+        usleep(1000); // 1ms
+    }
+
+    if (!status_pending) {
+        printf("FAIL: expected status pending after %d tests\n", attempt);
+        return false;
+    }
+
+    ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
+
+    if (result != -6) {
+        printf("FAIL: expected status pending: %zd\n", result);
+        return false;
+    }
+
+    chan_out_test(chan, 0xff, NULL);
+
+    printf("PASS\n");
+
+    return true;
+}
+
+bool test_exec_device_busy(struct chan_out *chan, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_exec_device_busy\n");
+
+    mock_cu_arrange(mock_cu, true, false, false, 0);
+
+    chan_out_enable(chan);
+    chan_out_config(chan, 0xff, true);
+
+    ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
+
+    if (result != -7) {
+        printf("FAIL: expected device busy: %zd\n", result);
+        return false;
+    }
+
+    printf("PASS\n");
+
+    return true;
+}
+
+bool test_exec_immediate_command(struct chan_out *chan, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_exec_immediate_command\n");
+
+    mock_cu_arrange(mock_cu, false, false, false, 0);
+
+    chan_out_enable(chan);
+    chan_out_config(chan, 0xff, true);
+
+    uint8_t status;
+
+    ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, &status);
+
+    if (result != 0) {
+        printf("FAIL: expected successful count 0 bytes: %zd\n", result);
+        return false;
+    }
+
+    if (status != 0x0c) {
+        printf("FAIL: expected 0x0c status: 0x%.2x\n", status);
+        return false;
+    }
+
+    printf("PASS\n");
+
+    return true;
+}
 
 void buf_arrange(uint8_t *buf, size_t count)
 {

@@ -4,8 +4,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <sys/types.h>
 
 #include <udmabuf.h>
+
+#define CHAN_CMD_NOP        0x03
 
 #define CHAN_STATUS_ATTN    0x80    // Attention
 #define CHAN_STATUS_SM      0x40    // Status Modifier
@@ -35,8 +38,10 @@ int chan_out_config(struct chan_out *chan, uint8_t addr, bool enable);
 
 int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status);
 
-ssize_t chan_out_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count);
+int chan_out_start(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, size_t count);
 
 int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver);
+
+ssize_t chan_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, void *buf, size_t count, uint8_t *status);
 
 #endif

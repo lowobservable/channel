@@ -2,7 +2,7 @@ CFLAGS = -Wall -I../libhack
 
 all: libchan.a test_3174 test_mock
 
-libchan.a: chan_out.o mock_cu.o
+libchan.a: chan_out.o chan.o mock_cu.o
 	$(AR) rcs $@ $^
 
 test_3174: test_3174.c libchan.a ../libhack/libhack.a

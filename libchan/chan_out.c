@@ -89,6 +89,10 @@ int chan_out_config(struct chan_out *chan, uint8_t addr, bool enable)
 
 int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status)
 {
+    if (addr != (chan->regs[REG_DEVICE_1] & 0xff000000) >> 24) {
+        return -999;
+    }
+
     uint32_t reg = chan->regs[REG_DEVICE_2];
 
     bool pending = (reg & 0x00002000);
@@ -102,75 +106,61 @@ int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status)
     chan->regs[REG_DEVICE_2] = 0x00002000;
 
     if (status != NULL) {
-        *status = (reg >> 16) & 0x000000ff;
+        *status = (reg & 0x00ff0000) >> 16;
     }
 
     return pending;
 }
 
-ssize_t chan_out_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t *buf, size_t count)
+int chan_out_start(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, size_t count)
 {
-    return -1;
-    //if (count > 0 && buf == NULL) {
-    //    return -1;
-    //}
+    if (count > UINT16_MAX) {
+        return -2;
+    }
 
-    //if (count > UINT16_MAX) {
-    //    return -1;
-    //}
+    if (count > chan->udmabuf.size) {
+        return -2;
+    }
 
-    //if (count > chan->udmabuf.size) {
-    //    return -1;
-    //}
+    if (addr != (chan->regs[REG_DEVICE_1] & 0xff000000) >> 24) {
+        return -999;
+    }
 
-    //// Channel is active...
-    //if (chan->regs[REG_STATUS_1] & 0x01) {
-    //    return -2;
-    //}
+    // Start pending...
+    if (chan->regs[REG_DEVICE_2] & 0x00000001) {
+        return -5;
+    }
 
-    //if (is_write_cmd(cmd) && count > 0) {
-    //    udmabuf_copy_to_dma(&chan->udmabuf, buf, count);
-    //}
+    chan->regs[REG_DEVICE_3] = chan->udmabuf.addr;
+    chan->regs[REG_DEVICE_4] = (((uint16_t) count) << 16) | cmd;
+    chan->regs[REG_DEVICE_2] = 0x00000001;
 
-    //chan->regs[REG_CCW_1] = (cmd << 24) | (uint16_t) count;
-    //chan->regs[REG_CCW_2] = chan->udmabuf.addr;
+    while (chan->regs[REG_DEVICE_2] & 0x00000001) {
+        usleep(100);
+    }
 
-    //chan->regs[REG_CONTROL_2] = (addr << 24) | 0x01; // Start...
+    uint8_t condition_code = (chan->regs[REG_DEVICE_2] & 0x000000f0) >> 4;
 
-    //while (chan->regs[REG_STATUS_1] & 0x01) {
-    //    usleep(100);
-    //}
+    if (condition_code != 0) {
+        switch (condition_code) {
+            case 0x01: // XXX - Device Disabled
+                return -3;
 
-    //uint8_t condition_code = (uint8_t) ((chan->regs[REG_STATUS_1] & 0xc0) >> 6);
+            case 0x02: // XXX - Device Not Operational
+                return -4;
 
-    //if (condition_code != 0) {
-    //    return -3;
-    //}
+            case 0x03: // XXX - Status Pending
+                return -6;
 
-    //uint8_t device_status = chan_out_device_status(chan);
+            case 0x04: // XXX - Device Busy
+                return -7;
 
-    //if (device_status & CHAN_STATUS_BUSY) {
-    //    return -4;
-    //}
+            default:
+                return -1;
+        }
+    }
 
-    //// We expect channel end and device end...
-    //if (!((device_status & CHAN_STATUS_CE) && (device_status & CHAN_STATUS_DE))) {
-    //    return -5;
-    //}
-
-    //// We don't expect unit check or unit exception...
-    //if (device_status & CHAN_STATUS_UC || device_status & CHAN_STATUS_UX) {
-    //    return -6;
-    //}
-
-    //// The count in the status register is a "residual" count.
-    //size_t actual_count = count - (uint16_t) chan->regs[REG_STATUS_2];
-
-    //if (is_read_cmd(cmd) && actual_count > 0) {
-    //    udmabuf_copy_from_dma(&chan->udmabuf, buf, actual_count);
-    //}
-
-    //return actual_count;
+    return 0;
 }
 
 int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver)
