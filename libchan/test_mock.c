@@ -128,8 +128,8 @@ bool test_exec_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu)
 
     ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
 
-    if (result != -3) {
-        printf("FAIL: expected device disabled: %zd\n", result);
+    if (result != CHAN_ERR_DEVICE_STATE) {
+        printf("FAIL: expected device state error: %zd\n", result);
         return false;
     }
 
@@ -149,8 +149,8 @@ bool test_exec_device_not_operational(struct chan_out *chan, struct mock_cu *moc
 
     ssize_t result = chan_exec(chan, 0x1b, CHAN_CMD_NOP, 0, NULL, 0, NULL);
 
-    if (result != -4) {
-        printf("FAIL: expected device not operational: %zd\n", result);
+    if (result != CHAN_ERR_DEVICE_NOTOP) {
+        printf("FAIL: expected device not operational error: %zd\n", result);
         return false;
     }
 
@@ -189,8 +189,8 @@ bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu)
 
     ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
 
-    if (result != -6) {
-        printf("FAIL: expected status pending: %zd\n", result);
+    if (result != CHAN_ERR_STATUS_PENDING) {
+        printf("FAIL: expected status pending error: %zd\n", result);
         return false;
     }
 
@@ -212,8 +212,8 @@ bool test_exec_device_busy(struct chan_out *chan, struct mock_cu *mock_cu)
 
     ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
 
-    if (result != -7) {
-        printf("FAIL: expected device busy: %zd\n", result);
+    if (result != CHAN_ERR_DEVICE_BUSY) {
+        printf("FAIL: expected device busy error: %zd\n", result);
         return false;
     }
 

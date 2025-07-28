@@ -8,16 +8,24 @@
 
 #include <udmabuf.h>
 
-#define CHAN_CMD_NOP        0x03
+#define CHAN_CMD_NOP            0x03
 
-#define CHAN_STATUS_ATTN    0x80    // Attention
-#define CHAN_STATUS_SM      0x40    // Status Modifier
-#define CHAN_STATUS_CUE     0x20    // Control Unit End
-#define CHAN_STATUS_BUSY    0x10    // Busy
-#define CHAN_STATUS_CE      0x08    // Channel End
-#define CHAN_STATUS_DE      0x04    // Device End
-#define CHAN_STATUS_UC      0x02    // Unit Check
-#define CHAN_STATUS_UX      0x01    // Unit Exception
+#define CHAN_STATUS_ATTN        0x80    // Attention
+#define CHAN_STATUS_SM          0x40    // Status Modifier
+#define CHAN_STATUS_CUE         0x20    // Control Unit End
+#define CHAN_STATUS_BUSY        0x10    // Busy
+#define CHAN_STATUS_CE          0x08    // Channel End
+#define CHAN_STATUS_DE          0x04    // Device End
+#define CHAN_STATUS_UC          0x02    // Unit Check
+#define CHAN_STATUS_UX          0x01    // Unit Exception
+
+#define CHAN_ERR_ARGS           -2      // Invalid arguments
+#define CHAN_ERR_CHANNEL_STATE  -3      // Invalid channel state
+#define CHAN_ERR_DEVICE_STATE   -4      // Invalid device state
+#define CHAN_ERR_DEVICE_NOTOP   -5      // Device not operational
+#define CHAN_ERR_DEVICE_BUSY    -6      // Device busy
+#define CHAN_ERR_START_PENDING  -7      // Start pending
+#define CHAN_ERR_STATUS_PENDING -8      // Status pending
 
 struct chan_out {
     uintptr_t base_addr;

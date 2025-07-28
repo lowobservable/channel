@@ -7,6 +7,10 @@
 
 ssize_t chan_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, void *buf, size_t count, uint8_t *status)
 {
+    if (chan == NULL) {
+        return CHAN_ERR_ARGS;
+    }
+
     int start_result = chan_out_start(chan, addr, cmd, flags, count);
 
     if (start_result < 0) {
