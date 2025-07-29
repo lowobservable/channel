@@ -18,12 +18,13 @@
 iconv_t ebcdic_conv;
 
 bool test(struct chan_out *chan, uint8_t addr);
+bool test_device(struct chan_out *chan, uint8_t addr);
+bool test_attn(struct chan_out *chan, uint8_t addr, uint8_t status);
 //bool exec_nop(struct chan_out *chan, uint8_t addr);
 //bool exec_basic_sense(struct chan_out *chan, uint8_t addr);
 //bool exec_sense_id(struct chan_out *chan, uint8_t addr);
 //bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len);
 //bool exec_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid);
-//void wait_for_request_in(struct chan_out *chan);
 size_t format_screen(uint8_t *buf, size_t buf_size, uint8_t aid);
 ssize_t ebcdic_write(uint8_t *buf, size_t buf_size, char *ascii);
 
@@ -74,16 +75,33 @@ void signal_handler(int signum)
 
 bool test(struct chan_out *chan, uint8_t addr)
 {
-    signal(SIGINT, signal_handler);
-
     chan_out_config(chan, addr, true);
 
     bool device_online = false;
 
-    while (!stop) {
-        uint8_t status;
+    uint8_t status;
 
-        int result = chan_out_test(chan, addr, &status);
+    int result = (int) chan_exec(chan, addr, CHAN_CMD_NOP, 0, NULL, 0, &status);
+
+    if (result == 0) {
+        if (!test_device(chan, addr)) {
+            return false;
+        }
+
+        device_online = true;
+    } else if (result == CHAN_ERR_STATUS_PENDING || result == CHAN_ERR_DEVICE_BUSY) {
+        // Wait for status to be handled below.
+    } else if (result == CHAN_ERR_DEVICE_NOTOP) { // Not Operational
+        printf("Device appears not operational, turn it on...\n");
+    } else if (result < 0) {
+        printf("chan_exec NOP error: %d\n", result);
+        return false;
+    }
+
+    signal(SIGINT, signal_handler);
+
+    while (!stop) {
+        result = chan_out_test(chan, addr, &status);
 
         if (result < 0) {
             printf("chan_out_test error: %d\n", result);
@@ -95,17 +113,21 @@ bool test(struct chan_out *chan, uint8_t addr)
             continue;
         }
 
-        printf("status = 0x%.2x\n", status);
-
         // NOTE: There doesn't appear to be a unsolicitated status when the
         // device goes offline...
 
-        if (!device_online && status == CHAN_STATUS_DE) {
-            device_online = true;
+        if (status == CHAN_STATUS_DE) {
+            if (!test_device(chan, addr)) {
+                return false;
+            }
 
-            printf("Device %.2x is online!\n", addr);
+            device_online = true;
         } else if (device_online && status == CHAN_STATUS_ATTN) {
-            printf("Device %.2x attention\n", addr);
+            if (!test_attn(chan, addr, status)) {
+                return false;
+            }
+        } else {
+            printf("Unsolicited status: 0x%.2x\n", status);
         }
     }
 
@@ -117,78 +139,33 @@ bool test(struct chan_out *chan, uint8_t addr)
         printf("Stopped\n");
     }
 
-//    while (true) {
-//        printf("TEST...\n");
-//
-//        int result = chan_out_test(chan, addr);
-//
-//        if (result < 0) {
-//            printf("\tresult = %d\n", result);
-//            return false;
-//        }
-//
-//        uint8_t status = chan_out_device_status(chan);
-//
-//        printf("\tstatus = 0x%.2x\n", status);
-//
-//        if (status == 0x00) {
-//            break;
-//        }
-//
-//        sleep(1);
-//    }
-//
-//    if (!exec_nop(chan, addr)) {
-//        return false;
-//    }
-//
-//    if (!exec_sense_id(chan, addr)) {
-//        return false;
-//    }
-//
-//    uint8_t aid = 0;
-//
-//    while (true) {
-//        uint8_t buf[256];
-//
-//        size_t buf_len = format_screen(buf, sizeof(buf), aid);
-//
-//        if (!exec_erase_write(chan, addr, buf, buf_len)) {
-//            return false;
-//        }
-//
-//        // Don't check for exit until after sending the screen...
-//        if (aid == 0xf3 /* PF3 */) {
-//            break;
-//        }
-//
-//        wait_for_request_in(chan);
-//
-//        printf("REQUEST IN...\n");
-//
-//        int result = chan_out_test(chan, addr);
-//
-//        if (result < 0) {
-//            printf("result = %d\n", result);
-//            return false;
-//        }
-//
-//        uint8_t status = chan_out_device_status(chan);
-//
-//        if (status == 0x00) {
-//            continue;
-//        }
-//
-//        printf("status = 0x%.2x\n", status);
-//
-//        if (status & CHAN_STATUS_ATTN) {
-//            printf("ATTN...\n");
-//
-//            if (!exec_read_modified(chan, addr, &aid)) {
-//                return false;
-//            }
-//        }
-//    }
+    return true;
+}
+
+bool test_device(struct chan_out *chan, uint8_t addr)
+{
+    printf("Device %.2x is online!\n", addr);
+
+    printf("NOP...\n");
+
+    uint8_t status;
+
+    ssize_t result = chan_exec(chan, addr, CHAN_CMD_NOP, 0, NULL, 0, &status);
+
+    if (result != 0) {
+        printf("\tresult = %zd\n", result);
+        return false;
+    }
+
+    // Expect 0x0c (CE + DE)
+    printf("\tstatus = 0x%.2x\n", status);
+
+    return true;
+}
+
+bool test_attn(struct chan_out *chan, uint8_t addr, uint8_t status)
+{
+    printf("Device %.2x attention\n", addr);
 
     return true;
 }
@@ -338,13 +315,6 @@ bool test(struct chan_out *chan, uint8_t addr)
 //    }
 //
 //    return true;
-//}
-//
-//void wait_for_request_in(struct chan_out *chan)
-//{
-//    while (!chan_out_request_in(chan)) {
-//        usleep(250000); // 250ms
-//    }
 //}
 
 size_t format_screen(uint8_t *buf, size_t buf_size, uint8_t aid)
