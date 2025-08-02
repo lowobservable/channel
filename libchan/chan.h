@@ -26,6 +26,7 @@
 #define CHAN_ERR_DEVICE_BUSY    -6      // Device busy
 #define CHAN_ERR_START_PENDING  -7      // Start pending
 #define CHAN_ERR_STATUS_PENDING -8      // Status pending
+#define CHAN_ERR_CMD_RESERVED   -9      // Reserved command
 
 struct chan_out {
     uintptr_t base_addr;
@@ -49,6 +50,8 @@ int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status);
 int chan_out_start(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, size_t count);
 
 int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver);
+
+void chan_out_debug(struct chan_out *chan);
 
 ssize_t chan_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, void *buf, size_t count, uint8_t *status);
 

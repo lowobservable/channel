@@ -151,11 +151,13 @@ module axi_mm_channel_out_tb;
         test_write_register;
         test_enable_disable_channel;
         test_wrap_tester;
+        test_unsolicited_status_device_disabled;
         test_unsolicited_status_device_enabled;
         test_start_device_disabled;
         test_start_device_not_operational;
         test_start_status_pending;
         test_start_device_busy;
+        test_start_reserved_command;
         test_start_immediate_command;
 
         $finish;
@@ -253,6 +255,87 @@ module axi_mm_channel_out_tb;
     end
     endtask
 
+    task test_unsolicited_status_device_disabled;
+        reg [31:0] data;
+        reg [1:0] resp;
+    begin
+        $display("START: test_unsolicited_status_device_disabled");
+
+        reset;
+
+        // Ensure that one-shot request mock is reset.
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
+
+        @(posedge clk);
+
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 1;
+
+        @(posedge clk);
+
+        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        data = 32'b0;
+
+        while (!data[14])
+        begin
+            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (!data[14])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_high(data[14], "status should be stacked");
+
+        // Enable the device.
+        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        data = 32'b0;
+
+        while (!data[15])
+        begin
+            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (!data[15])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_high(data[15], "status should be pending");
+        `assert_equal(data[23:16], 8'h85, "status should be ATTN + DE + UX");
+
+        // Clear the pending status.
+        master_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        master_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+        `assert_low(data[15], "not status pending");
+
+        $display("END: test_unsolicited_status_device_disabled");
+    end
+    endtask
+
     task test_unsolicited_status_device_enabled;
         reg [31:0] data;
         reg [1:0] resp;
@@ -284,30 +367,30 @@ module axi_mm_channel_out_tb;
 
         data = 32'b0;
 
-        while (!data[13])
+        while (!data[15])
         begin
             master_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
-            if (!data[13])
+            if (!data[15])
             begin
                 repeat (100) @(posedge clk);
             end
         end
 
-        `assert_high(data[13], "status should be pending");
+        `assert_high(data[15], "status should be pending");
         `assert_equal(data[23:16], 8'h85, "status should be ATTN + DE + UX");
 
         // Clear the pending status.
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00002000, resp);
+        master_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
         master_bfm.read(channel.REG_DEVICE_2, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
-        `assert_low(data[13], "not status pending");
+        `assert_low(data[15], "not status pending");
 
         $display("END: test_unsolicited_status_device_enabled");
     end
@@ -444,19 +527,19 @@ module axi_mm_channel_out_tb;
 
         data = 32'b0;
 
-        while (!data[13])
+        while (!data[15])
         begin
             master_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
-            if (!data[13])
+            if (!data[15])
             begin
                 repeat (100) @(posedge clk);
             end
         end
 
-        `assert_high(data[13], "status should be pending");
+        `assert_high(data[15], "status should be pending");
         `assert_equal(data[23:16], 8'h85, "status should be ATTN + DE + UX");
 
         // Start NOP.
@@ -549,6 +632,62 @@ module axi_mm_channel_out_tb;
     end
     endtask
 
+    task test_start_reserved_command;
+        reg [31:0] data;
+        reg [1:0] resp;
+    begin
+        $display("START: test_start_reserved_command");
+
+        reset;
+
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
+
+        @(posedge clk);
+
+        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        // Start TEST I/O.
+        master_bfm.write(channel.REG_DEVICE_3, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        master_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        master_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        data = 32'b1;
+
+        while (data[0])
+        begin
+            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (data[0])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_low(data[0], "not start pending");
+        `assert_equal(data[7:4], 4'h5, "condition code should be reserved command");
+
+        $display("END: test_start_reserved_command");
+    end
+    endtask
+
     task test_start_immediate_command;
         reg [31:0] data;
         reg [1:0] resp;
@@ -601,18 +740,18 @@ module axi_mm_channel_out_tb;
         `assert_low(data[0], "not start pending");
         `assert_equal(data[7:4], 4'h0, "condition code should be started");
 
-        `assert_high(data[13], "status should be pending");
+        `assert_high(data[15], "status should be pending");
         `assert_equal(data[23:16], 8'h0c, "status should be CE + DE");
 
         // Clear the pending status.
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00002000, resp);
+        master_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
         master_bfm.read(channel.REG_DEVICE_2, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
-        `assert_low(data[13], "not status pending");
+        `assert_low(data[15], "not status pending");
 
         $display("END: test_start_immediate_command");
     end

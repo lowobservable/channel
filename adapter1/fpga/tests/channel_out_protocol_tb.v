@@ -44,6 +44,7 @@ module channel_out_protocol_tb;
 
         .out_tready(sink.s_axi_tready),
 
+        .suppress_status(1'b0),
         .burst(protocol_burst),
 
         .a_bus_in(bus_in),

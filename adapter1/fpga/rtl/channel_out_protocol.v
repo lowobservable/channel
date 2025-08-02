@@ -28,8 +28,7 @@ module channel_out_protocol (
     //
     // C      2h                     - Accept Status     -> Ack
     // ^---- Chaining (TODO)
-    //    0   3h                     - Stack Status      -> Ack
-    //    1   3h                     - Suppress Status   -> Ack
+    //        3h                     - Stack Status      -> Ack
     //
     //        4h DDDD DDDD           - Send Data         -> Ack
     //        5h                     - Accept Data       -> Ack
@@ -52,6 +51,8 @@ module channel_out_protocol (
     output reg [23:0] out_tdata,
     output reg out_tvalid,
     input wire out_tready,
+
+    input wire suppress_status,
 
     // TODO: The driver is currently responsible for lowering burst, to allow
     // the control unit to disconnect, when the connection is complete such as
@@ -99,6 +100,7 @@ module channel_out_protocol (
     parameter ADDRESS_BUS_OUT_SKEW_DELAY_100_NS = 3; // 250 ns
     parameter ADDRESS_OUT_SELECT_OUT_DELAY_100_NS = 4; // 400 ns
     parameter HOLD_OUT_DELAY_100_NS = 40; // 4 μs, reduce this for tests
+    parameter SUPPRESS_STATUS_DELAY_100_NS = 3; // 250 ns
     parameter SELECT_OUT_IN_TIMEOUT_100_NS = 144; // 14.4 μs
 
     localparam ERROR_INVALID_IN = 8'h01;
@@ -165,6 +167,8 @@ module channel_out_protocol (
     reg [7:0] next_data;
     reg next_connected;
     reg next_request;
+    reg ending;
+    reg next_ending;
     reg [15:0] next_error;
 
     wire bus_in_parity_valid;
@@ -196,6 +200,20 @@ module channel_out_protocol (
         else if (hold_out_delay > 0)
         begin
             hold_out_delay <= hold_out_delay - 1;
+        end
+    end
+
+    reg [7:0] suppress_status_delay = 0;
+
+    always @(posedge clk)
+    begin
+        if (!a_suppress_out)
+        begin
+            suppress_status_delay <= SUPPRESS_STATUS_DELAY_100_NS * CLOCKS_PER_100_NS;
+        end
+        else if (suppress_status_delay > 0)
+        begin
+            suppress_status_delay <= suppress_status_delay - 1;
         end
     end
 
@@ -244,6 +262,7 @@ module channel_out_protocol (
         next_data = data;
         next_connected = 0;
         next_request = a_request_in;
+        next_ending = ending;
         next_error = error;
 
         // Leave bus out low when idle to reduce driver current.
@@ -279,6 +298,9 @@ module channel_out_protocol (
                 next_in_tready = 1;
 
                 next_operational_out = 1;
+                next_suppress_out = suppress_status;
+
+                next_ending = 0;
 
                 // TODO: Protocol violation check
 
@@ -322,6 +344,7 @@ module channel_out_protocol (
                 next_operational_out = 1;
                 next_hold_out = burst && burst_valid;
                 next_select_out = burst && burst_valid;
+                next_suppress_out = suppress_status && ending;
 
                 next_connected = a_operational_in;
 
@@ -352,6 +375,7 @@ module channel_out_protocol (
                 // end
                 else if (a_service_in && !a_select_in && !a_address_in && !a_status_in)
                 begin
+                    // TODO: if ending then this is a protocol violation
                     next_state = STATE_DATA_TRANSFER_1;
                 end
                 else if (a_status_in && !a_select_in && !a_address_in && !a_service_in)
@@ -365,6 +389,7 @@ module channel_out_protocol (
                 next_out_tvalid = 1;
 
                 next_operational_out = 1;
+                next_suppress_out = a_suppress_out;
 
                 // Preserve connection state while waiting on driver.
                 if (connected)
@@ -815,12 +840,17 @@ module channel_out_protocol (
             STATE_SELECT_REQUESTOR_1:
             begin
                 next_operational_out = 1;
+                next_suppress_out = suppress_status;
 
                 if (!a_operational_in && !a_select_in && !a_address_in && !a_status_in && !a_service_in)
                 begin
                     // SPEC: Once 'hold out' drops, it does not rise for at
                     // least 4 microseconds in general system configurations.
-                    if (hold_out_delay == 0)
+                    //
+                    // SPEC: ‘Suppress out' is up at least 250 nanoseconds
+                    // before 'select out' rises at the control unit to ensure
+                    // suppression of status.
+                    if (hold_out_delay == 0 && (!suppress_status || suppress_status_delay == 0))
                     begin
                         next_state = STATE_SELECT_REQUESTOR_2;
                     end
@@ -836,6 +866,7 @@ module channel_out_protocol (
                 next_operational_out = 1;
                 next_hold_out = 1;
                 next_select_out = 1;
+                next_suppress_out = suppress_status;
 
                 // Don't consider 'address in' here, it can rise at the same
                 // time as 'operational in', we'll look for that next.
@@ -1174,6 +1205,7 @@ module channel_out_protocol (
                 next_select_out = burst && burst_valid;
 
                 next_connected = 1;
+                next_ending = 1;
 
                 if (a_operational_in && a_status_in && !a_select_in && !a_address_in && !a_service_in)
                 begin
@@ -1298,6 +1330,7 @@ module channel_out_protocol (
                 next_hold_out = burst && burst_valid;
                 next_select_out = burst && burst_valid;
                 next_command_out = 1;
+                next_suppress_out = suppress_status;
 
                 next_connected = 1;
 
@@ -1342,6 +1375,7 @@ module channel_out_protocol (
         data <= next_data;
         connected <= next_connected;
         request <= next_request;
+        ending <= next_ending;
         error <= next_error;
 
         a_bus_out <= next_bus_out;

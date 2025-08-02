@@ -15,11 +15,13 @@
 #include "chan.h"
 #include "mock_cu.h"
 
+bool test_unsolicited_status_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu);
 bool test_unsolicited_status_device_enabled(struct chan_out *chan, struct mock_cu *mock_cu);
 bool test_exec_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu);
 bool test_exec_device_not_operational(struct chan_out *chan, struct mock_cu *mock_cu);
 bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu);
 bool test_exec_device_busy(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_exec_reserved_command(struct chan_out *chan, struct mock_cu *mock_cu);
 bool test_exec_immediate_command(struct chan_out *chan, struct mock_cu *mock_cu);
 
 void buf_arrange(uint8_t *buf, size_t count);
@@ -50,11 +52,13 @@ int main(void)
 
     printf("READY\n");
 
+    test_unsolicited_status_device_disabled(&chan, &mock_cu);
     test_unsolicited_status_device_enabled(&chan, &mock_cu);
     test_exec_device_disabled(&chan, &mock_cu);
     test_exec_device_not_operational(&chan, &mock_cu);
     test_exec_status_pending(&chan, &mock_cu);
     test_exec_device_busy(&chan, &mock_cu);
+    test_exec_reserved_command(&chan, &mock_cu);
     test_exec_immediate_command(&chan, &mock_cu);
 
     mock_cu_close(&mock_cu);
@@ -64,6 +68,76 @@ int main(void)
     close(mem_fd);
 
     return EXIT_SUCCESS;
+}
+
+bool test_unsolicited_status_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_unsolicited_status_device_disabled\n");
+
+    // Ensure that one-shot request mock is reset.
+    mock_cu_arrange(mock_cu, false, false, false, 0);
+    mock_cu_arrange(mock_cu, false, false, true, 0);
+
+    chan_out_config(chan, 0xff, false);
+    chan_out_enable(chan);
+
+    int attempt;
+    bool status_stacked = false;
+
+    for (attempt = 1; attempt <= 5; attempt++) {
+        if (chan->regs[5] & 0x00004000) {
+            status_stacked = true;
+            break;
+        }
+
+        usleep(1000); // 1ms
+    }
+
+    if (!status_stacked) {
+        printf("FAIL: expected status stacked after %d tests\n", attempt);
+        return false;
+    }
+
+    // Enable the device.
+    chan_out_config(chan, 0xff, true);
+
+    bool status_pending = false;
+    uint8_t status;
+
+    for (attempt = 1; attempt <= 5; attempt++) {
+        int result = chan_out_test(chan, 0xff, &status);
+
+        if (result == 1) {
+            status_pending = true;
+            break;
+        }
+
+        if (result < 0) {
+            printf("FAIL: test result error: %d\n", result);
+            return false;
+        }
+
+        usleep(1000); // 1ms
+    }
+
+    if (!status_pending) {
+        printf("FAIL: expected status pending after %d tests\n", attempt);
+        return false;
+    }
+
+    if (status != 0x85) {
+        printf("FAIL: expected 0x85 status: 0x%.2x\n", status);
+        return false;
+    }
+
+    if (chan_out_test(chan, 0xff, NULL) != 0) {
+        printf("FAIL: expected no status pending\n");
+        return false;
+    }
+
+    printf("PASS\n");
+
+    return true;
 }
 
 bool test_unsolicited_status_device_enabled(struct chan_out *chan, struct mock_cu *mock_cu)
@@ -174,7 +248,7 @@ bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu)
     bool status_pending = false;
 
     for (attempt = 1; attempt <= 5; attempt++) {
-        if (chan->regs[5] & 0x00002000) {
+        if (chan->regs[5] & 0x00008000) {
             status_pending = true;
             break;
         }
@@ -214,6 +288,27 @@ bool test_exec_device_busy(struct chan_out *chan, struct mock_cu *mock_cu)
 
     if (result != CHAN_ERR_DEVICE_BUSY) {
         printf("FAIL: expected device busy error: %zd\n", result);
+        return false;
+    }
+
+    printf("PASS\n");
+
+    return true;
+}
+
+bool test_exec_reserved_command(struct chan_out *chan, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_exec_reserved_command\n");
+
+    mock_cu_arrange(mock_cu, false, false, false, 0);
+
+    chan_out_enable(chan);
+    chan_out_config(chan, 0xff, true);
+
+    ssize_t result = chan_exec(chan, 0xff, 0x00, 0, NULL, 0, NULL);
+
+    if (result != CHAN_ERR_CMD_RESERVED) {
+        printf("FAIL: expected reserved command error: %zd\n", result);
         return false;
     }
 

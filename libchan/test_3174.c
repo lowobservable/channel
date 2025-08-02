@@ -20,7 +20,6 @@ iconv_t ebcdic_conv;
 bool test(struct chan_out *chan, uint8_t addr);
 bool test_device(struct chan_out *chan, uint8_t addr);
 bool test_attn(struct chan_out *chan, uint8_t addr, uint8_t status);
-//bool exec_nop(struct chan_out *chan, uint8_t addr);
 //bool exec_basic_sense(struct chan_out *chan, uint8_t addr);
 //bool exec_sense_id(struct chan_out *chan, uint8_t addr);
 //bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len);
@@ -75,7 +74,20 @@ void signal_handler(int signum)
 
 bool test(struct chan_out *chan, uint8_t addr)
 {
+    chan_out_config(chan, addr, false);
+
+    printf("Device %.2x disabled, press ENTER to enable...\n", addr);
+
+    char *line = NULL;
+    size_t len = 0;
+
+    getline(&line, &len, stdin);
+
+    chan_out_debug(chan);
+
     chan_out_config(chan, addr, true);
+
+    printf("Device %.2x enabled...\n", addr);
 
     bool device_online = false;
 
@@ -139,6 +151,8 @@ bool test(struct chan_out *chan, uint8_t addr)
         printf("Stopped\n");
     }
 
+    chan_out_debug(chan);
+
     return true;
 }
 
@@ -170,24 +184,6 @@ bool test_attn(struct chan_out *chan, uint8_t addr, uint8_t status)
     return true;
 }
 
-//bool exec_nop(struct chan_out *chan, uint8_t addr)
-//{
-//    printf("NOP...\n");
-//
-//    ssize_t result = chan_out_exec(chan, addr, 0x03 /* NOP */, NULL, 0);
-//
-//    if (result < 0) {
-//        printf("\tresult = %zd\n", result);
-//        return false;
-//    }
-//
-//    uint8_t status = chan_out_device_status(chan);
-//
-//    printf("\tstatus = 0x%.2x\n", status);
-//
-//    return true;
-//}
-//
 //bool exec_basic_sense(struct chan_out *chan, uint8_t addr)
 //{
 //    printf("BASIC SENSE...\n");

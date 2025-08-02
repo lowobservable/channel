@@ -113,7 +113,6 @@ module axi_mm_channel_out (
     reg status_pending;
     reg clear_status_pending;
     reg status_stacked;
-    reg status_suppressed;
     reg [7:0] command;
     reg [15:0] count;
     reg start_pending;
@@ -129,9 +128,9 @@ module axi_mm_channel_out (
     // C4: RRRR RRRR | RRRR RRRR | RRRR    ^--------------- Wrap tester enable
     //     ---- ---- | ---- ---- | ---- ---- | ---- ----
     // D1: AAAA AAAA |           |           |         E <- "Device enable"
-    // D2:           | SSSS SSSS | RTP    BA | CCCC    S <- Start / Start Pending
-    //                             ^^^    ^^--------------- Active
-    //                             +++--------------------- Supr'd / Stack'd / Pending
+    // D2:           | SSSS SSSS | PS     BA | CCCC    S <- Start / Start Pending
+    //                             ^^     ^^--------------- Active
+    //                             ++---------------------- Pending / Stacked
     // D3: AAAA AAAA | AAAA AAAA | AAAA AAAA | AAAA AAAA <- Storage address
     // D4: NNNN NNNN | NNNN NNNN |           | CCCC CCCC
     //
@@ -175,7 +174,7 @@ module axi_mm_channel_out (
 
                 REG_DEVICE_2:
                 begin
-                    s_axi_rdata <= { 8'b0, status, status_suppressed, status_stacked, status_pending, 3'b0, subchannel_active, device_active, condition_code, 3'b0, start_pending };
+                    s_axi_rdata <= { 8'b0, status, status_pending, status_stacked, 4'b0, subchannel_active, device_active, condition_code, 3'b0, start_pending };
                 end
 
                 REG_DEVICE_3:
@@ -285,7 +284,7 @@ module axi_mm_channel_out (
                         start_pending <= 1;
                     end
 
-                    if (wdata[13])
+                    if (wdata[15])
                     begin
                         clear_status_pending <= 1;
                     end
@@ -345,17 +344,19 @@ module axi_mm_channel_out (
     reg [7:0] channel_state;
 
     localparam CHANNEL_STATE_IDLE = 0;
-    localparam CHANNEL_STATE_START_1 = 90;
-    localparam CHANNEL_STATE_START_2 = 91;
-    localparam CHANNEL_STATE_START_3 = 92;
-    localparam CHANNEL_STATE_REQUEST_1 = 1;
-    localparam CHANNEL_STATE_REQUEST_2 = 2;
-    localparam CHANNEL_STATE_CONNECTED = 3;
-    localparam CHANNEL_STATE_ACCEPT_STATUS_1 = 4;
-    localparam CHANNEL_STATE_ACCEPT_STATUS_2 = 5;
-    localparam CHANNEL_STATE_STACK_STATUS_1 = 6;
-    localparam CHANNEL_STATE_STACK_STATUS_2 = 7;
-    localparam CHANNEL_STATE_TODO = 8;
+    localparam CHANNEL_STATE_START_1 = 1;
+    localparam CHANNEL_STATE_START_2 = 2;
+    localparam CHANNEL_STATE_START_3 = 3;
+    localparam CHANNEL_STATE_REQUEST_1 = 4;
+    localparam CHANNEL_STATE_REQUEST_2 = 5;
+    localparam CHANNEL_STATE_CONNECTED = 6;
+    localparam CHANNEL_STATE_ACCEPT_STATUS_1 = 7;
+    localparam CHANNEL_STATE_ACCEPT_STATUS_2 = 8;
+    localparam CHANNEL_STATE_STACK_STATUS_1 = 9;
+    localparam CHANNEL_STATE_STACK_STATUS_2 = 10;
+    localparam CHANNEL_STATE_TEST_IO_1 = 11;
+    localparam CHANNEL_STATE_TEST_IO_2 = 12;
+    localparam CHANNEL_STATE_TODO = 13;
 
     reg [23:0] channel_in_tdata;
     reg channel_in_tvalid;
@@ -365,6 +366,7 @@ module axi_mm_channel_out (
     wire channel_out_tvalid;
     reg channel_out_tready;
 
+    reg channel_suppress_status = 1;
     reg channel_burst = 0;
     wire channel_connected;
     wire channel_request;
@@ -384,6 +386,7 @@ module axi_mm_channel_out (
         .out_tvalid(channel_out_tvalid),
         .out_tready(channel_out_tready),
 
+        .suppress_status(channel_suppress_status),
         .burst(channel_burst),
         .connected(channel_connected),
         .request(channel_request),
@@ -431,7 +434,6 @@ module axi_mm_channel_out (
 
             status_pending <= 0;
             status_stacked <= 0;
-            status_suppressed <= 0;
         end
         else
         begin
@@ -444,17 +446,19 @@ module axi_mm_channel_out (
                     end
                     else if (device_enable && status_stacked && !status_pending)
                     begin
-                        // Wait... the device should request service, this
-                        // should ensure that any stacked status is made pending
-                        // before a start is handled.
-                    end
-                    else if (device_enable && status_suppressed && !status_pending)
-                    begin
-                        // Unsuppress that status, with TEST
+                        // Unstack status with test I/O.
+                        channel_state <= CHANNEL_STATE_TEST_IO_1;
                     end
                     else if (start_pending && !clear_start_pending)
                     begin
-                        if (!device_enable)
+                        if (command[3:0] == 4'h0 || command[3:0] == 4'h8)
+                        begin
+                            // Test I/O and other reserved commands are reserved
+                            // for use by the channel subsystem.
+                            condition_code <= 4'h5; // XXX - Reserved Command
+                            clear_start_pending <= 1;
+                        end
+                        else if (!device_enable)
                         begin
                             condition_code <= 4'h1; // XXX - Device Disabled
                             clear_start_pending <= 1;
@@ -618,25 +622,17 @@ module axi_mm_channel_out (
                             end
                             else if (channel_out_tdata[15:8] == device_address && device_enable && !status_pending)
                             begin
-                                // Ok, we can accept the status...
                                 status <= channel_out_tdata[7:0];
                                 status_pending <= 1;
                                 status_stacked <= 0;
-                                status_suppressed <= 0;
 
                                 channel_state <= CHANNEL_STATE_ACCEPT_STATUS_1;
                             end
-                            else if (!status_stacked)
+                            else
                             begin
-                                // We gotta stack that status.
                                 status_stacked <= 1;
 
                                 channel_state <= CHANNEL_STATE_STACK_STATUS_1;
-                            end
-                            else
-                            begin
-                                // We probably ned to suppress now.
-                                channel_state <= CHANNEL_STATE_TODO;
                             end
                         end
                         // else if (channel_out_tdata[19:16] == 4'h2) // Data Service
@@ -718,6 +714,58 @@ module axi_mm_channel_out (
                     end
                 end
 
+                CHANNEL_STATE_TEST_IO_1:
+                begin
+                    channel_in_tdata <= { 8'h11, device_address, 8'h00 }; // XXX - Initial Selection
+                    channel_in_tvalid <= 1;
+
+                    if (channel_in_tready && channel_in_tvalid)
+                    begin
+                        channel_in_tvalid <= 0;
+
+                        channel_state <= CHANNEL_STATE_TEST_IO_2;
+                    end
+                end
+
+                CHANNEL_STATE_TEST_IO_2:
+                begin
+                    channel_out_tready <= 1;
+
+                    if (channel_out_tready && channel_out_tvalid)
+                    begin
+                        channel_out_tready <= 0;
+
+                        status_stacked <= 0;
+
+                        if (channel_out_tdata[19:16] == 4'h1) // XXX - Status
+                        begin
+                            if (!channel_out_tdata[20])
+                            begin
+                                // Invalid parity...
+                                channel_state <= CHANNEL_STATE_TODO;
+                            end
+                            else if (channel_out_tdata[15:8] == device_address && channel_out_tdata[23])
+                            begin
+                                status <= channel_out_tdata[7:0];
+                                status_pending <= 1;
+
+                                channel_state <= CHANNEL_STATE_IDLE;
+                            end
+                        end
+                        else if (channel_out_tdata[23:16] == 8'hff) // XXX - Error
+                        begin
+                            if (channel_out_tdata[15:8] == 8'h02) // XXX - Device Not Operational
+                            begin
+                                channel_state <= CHANNEL_STATE_IDLE;
+                            end
+                            else
+                            begin
+                                channel_state <= CHANNEL_STATE_TODO;
+                            end
+                        end
+                    end
+                end
+
                 CHANNEL_STATE_TODO:
                 begin
                     $display("TODO");
@@ -735,7 +783,6 @@ module axi_mm_channel_out (
 
             status_pending <= 0;
             status_stacked <= 0;
-            status_suppressed <= 0;
         end
     end
 

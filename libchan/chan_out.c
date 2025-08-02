@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -112,7 +113,7 @@ int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status)
 
     uint32_t reg = chan->regs[REG_DEVICE_2];
 
-    bool pending = (reg & 0x00002000);
+    bool pending = (reg & 0x00008000);
 
     if (!pending) {
         return 0;
@@ -120,7 +121,7 @@ int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status)
 
     // Clear pending status, this must only be done if the read above resulted
     // in pending status to avoid missing pending status.
-    chan->regs[REG_DEVICE_2] = 0x00002000;
+    chan->regs[REG_DEVICE_2] = 0x00008000;
 
     if (status != NULL) {
         *status = (reg & 0x00ff0000) >> 16;
@@ -176,6 +177,9 @@ int chan_out_start(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t fla
             case 0x04: // XXX - Device Busy
                 return CHAN_ERR_DEVICE_BUSY;
 
+            case 0x05: // XXX - Reserved Command
+                return CHAN_ERR_CMD_RESERVED;
+
             default:
                 return -1;
         }
@@ -208,4 +212,15 @@ int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receive
     }
 
     return (value ^ driver);
+}
+
+void chan_out_debug(struct chan_out *chan)
+{
+    if (chan == NULL) {
+        return;
+    }
+
+    for (int index = 0; index < 8; index++) {
+        printf("%d: %.8x\n", index, chan->regs[index]);
+    }
 }

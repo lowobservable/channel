@@ -69,6 +69,7 @@ module mock_cu (
     reg status_in;
     reg service_in;
     wire service_out;
+    wire suppress_out;
     wire selection_x;
     reg selection_y;
 
@@ -133,7 +134,7 @@ module mock_cu (
         .status_in(status_in),
         .service_in(service_in),
         .service_out(service_out),
-        .suppress_out(), // TODO
+        .suppress_out(suppress_out),
 
         .selection_x(selection_x),
         .selection_y(selection_y)
@@ -142,6 +143,7 @@ module mock_cu (
     reg [7:0] state = 0;
 
     reg [7:0] status = 8'b0000_1100; // CE + DE
+    reg status_stacked = 0;
 
     reg x_mock_request = 0;
     reg prev_mock_request = 0;
@@ -159,7 +161,7 @@ module mock_cu (
 
         prev_mock_request <= mock_request;
 
-        request_in <= x_mock_request;
+        request_in <= x_mock_request && !(suppress_out && status_stacked);
 
         if (operational_out)
         begin
@@ -181,10 +183,13 @@ module mock_cu (
                         begin
                             selection_y <= 1'b0; // Intercept the selection
 
-                            if (mock_short_busy)
+                            if (mock_busy || mock_short_busy)
                             begin
                                 status <= 8'b0001_0000; // BUSY
+                            end
 
+                            if (mock_short_busy)
+                            begin
                                 state <= 99;
                             end
                             else
@@ -195,6 +200,8 @@ module mock_cu (
                         else if (!address_out && x_mock_request)
                         begin
                             selection_y <= 1'b0; // Intercept the selection
+
+                            status <= 8'b10000101; // ATTN + DE + UX: Device ready...
 
                             state <= 81;
                         end
@@ -232,7 +239,7 @@ module mock_cu (
                     x_mock_request <= 0;
 
                     // Status requests only for now...
-                    bus_in <= 8'b10000101; // ATTN + DE + UX: Device ready...
+                    bus_in <= status;
                     status_in <= 1;
 
                     if (service_out)
@@ -240,11 +247,26 @@ module mock_cu (
                         status_in <= 0;
                         state <= 84;
                     end
+                    else if (command_out)
+                    begin
+                        status_stacked <= 1;
+
+                        status_in <= 0;
+                        state <= 85;
+                    end
                 end
 
                 84:
                 begin
                     if (!service_out)
+                    begin
+                        state <= 0;
+                    end
+                end
+
+                85:
+                begin
+                    if (!command_out)
                     begin
                         state <= 0;
                     end
@@ -294,23 +316,24 @@ module mock_cu (
 
                     if (mock_busy)
                     begin
-                        status <= 8'b0001_0000; // BUSY
-
                         state <= 6;
                     end
                     else if (command == 8'h00 /* TEST I/O */)
                     begin
-                        // TODO
+                        // Just return current status.
+                        status_stacked <= 0;
+
+                        state <= 6;
                     end
                     else if (command == 8'h01 /* WRITE */)
                     begin
-                        status <= 8'b0000_0000;
+                        status <= 8'b0000_0000; // Command Accepted
 
                         state <= 6;
                     end
                     else if (command == 8'h02 /* READ */)
                     begin
-                        status <= 8'b0000_0000;
+                        status <= 8'b0000_0000; // Command Accepted
 
                         state <= 6;
                     end
@@ -341,7 +364,7 @@ module mock_cu (
                     begin
                         status_in <= 0;
 
-                        if (mock_busy)
+                        if (mock_busy && command == 8'h00)
                         begin
                             operational_in <= selection_x; // To avoid violation
                             state <= 61;
@@ -353,7 +376,7 @@ module mock_cu (
                     end
                 end
 
-                61: // "Long" busy
+                61: // "Long" busy or TEST I/O
                 begin
                     state <= 50;
                 end
@@ -378,7 +401,7 @@ module mock_cu (
 
                     if (!service_out)
                     begin
-                        if (status[4] || (status[3] && status[2]))
+                        if (status[4] || (status[3] && status[2]) || command == 8'h00)
                         begin
                             state <= 50;
                         end
@@ -535,6 +558,7 @@ module mock_cu (
         if (reset)
         begin
             state <= 0;
+            status_stacked <= 0;
         end
     end
 endmodule
