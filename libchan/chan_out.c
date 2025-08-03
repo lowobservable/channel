@@ -20,6 +20,9 @@
 #define REG_DEVICE_3 6
 #define REG_DEVICE_4 7
 
+#define CHAN_OUT_IS_SEND_CMD(C) ((C) & 0x01)
+#define CHAN_OUT_IS_RECV_CMD(C) (!((C) & 0x01))
+
 int chan_out_open(struct chan_out *chan, uintptr_t base_addr, int mem_fd, char *udmabuf_path, bool frontend_enable)
 {
     if (chan == NULL) {
@@ -130,6 +133,28 @@ int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status)
     return pending;
 }
 
+ssize_t chan_out_prepare(struct chan_out *chan, uint8_t cmd, void *buf, size_t count)
+{
+    if (chan == NULL) {
+        return CHAN_ERR_ARGS;
+    }
+
+    // TODO: This would not apply if a skip flag is implemented.
+    if (count > 0 && buf == NULL) {
+        return CHAN_ERR_ARGS;
+    }
+
+    if (count > chan->udmabuf.size) {
+        return CHAN_ERR_ARGS;
+    }
+
+    if (!CHAN_OUT_IS_SEND_CMD(cmd) || buf == NULL) {
+        return 0;
+    }
+
+    return udmabuf_copy_to_dma(&chan->udmabuf, buf, count);
+}
+
 int chan_out_start(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, size_t count)
 {
     if (chan == NULL) {
@@ -137,10 +162,6 @@ int chan_out_start(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t fla
     }
 
     if (count > UINT16_MAX) {
-        return CHAN_ERR_ARGS;
-    }
-
-    if (count > chan->udmabuf.size) {
         return CHAN_ERR_ARGS;
     }
 
@@ -153,8 +174,8 @@ int chan_out_start(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t fla
         return CHAN_ERR_START_PENDING;
     }
 
-    chan->regs[REG_DEVICE_3] = chan->udmabuf.addr;
-    chan->regs[REG_DEVICE_4] = (((uint16_t) count) << 16) | cmd;
+    chan->regs[REG_DEVICE_3] = (((uint16_t) count) << 16) | cmd;
+    chan->regs[REG_DEVICE_4] = chan->udmabuf.addr;
     chan->regs[REG_DEVICE_2] = 0x00000001;
 
     while (chan->regs[REG_DEVICE_2] & 0x00000001) {
@@ -186,6 +207,31 @@ int chan_out_start(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t fla
     }
 
     return 0;
+}
+
+ssize_t chan_out_complete(struct chan_out *chan, uint8_t cmd, void *buf, size_t count)
+{
+    if (chan == NULL) {
+        return CHAN_ERR_ARGS;
+    }
+
+    // TODO: This would not apply if a skip flag is implemented.
+    if (count > 0 && buf == NULL) {
+        return CHAN_ERR_ARGS;
+    }
+
+    if (count > chan->udmabuf.size) {
+        return CHAN_ERR_ARGS;
+    }
+
+    size_t residual_count = (chan->regs[REG_DEVICE_3] & 0xffff0000) >> 16;
+    size_t actual_count = count - residual_count;
+
+    if (CHAN_OUT_IS_RECV_CMD(cmd) && buf != NULL) {
+        udmabuf_copy_from_dma(&chan->udmabuf, buf, actual_count);
+    }
+
+    return actual_count;
 }
 
 int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver)
@@ -221,6 +267,57 @@ void chan_out_debug(struct chan_out *chan)
     }
 
     for (int index = 0; index < 8; index++) {
-        printf("%d: %.8x\n", index, chan->regs[index]);
+        uint32_t reg = chan->regs[index];
+
+        printf("R%d: %.8x", index, reg);
+
+        if (index == 0) {
+            if (reg & 0x00000001) {
+                printf(" [ChEn]");
+            }
+        } else if (index == 2) {
+            if (reg & 0x00000001) {
+                printf(" [FeEn]");
+            }
+
+            if (reg & 0x00000100) {
+                printf(" [WrapEn]");
+            }
+        } else if (index == 4) {
+            if (reg & 0x00000001) {
+                printf(" [DevEn]");
+            }
+
+            printf(" [Addr = %.2x]", (reg & 0xff000000) >> 24);
+        } else if (index == 5) {
+            if (reg & 0x00008000) {
+                printf(" [StP]");
+
+                printf(" [Stat = %.2x]", (reg & 0x00ff0000) >> 16);
+            }
+
+            if (reg & 0x00004000) {
+                printf(" [StS]");
+            }
+
+            if (reg & 0x00000200) {
+                printf(" [ChA]");
+            }
+
+            if (reg & 0x00000100) {
+                printf(" [DevA]");
+            }
+
+            if (reg & 0x00000001) {
+                printf(" [StartP]");
+            } else {
+                printf(" [Cond = %d]", (int) ((reg & 0x000000f0) >> 4));
+            }
+        } else if (index == 6) {
+            printf(" [Cmd = %.2x]", reg & 0x000000ff);
+            printf(" [Count = %d]", (int) ((reg & 0xffff0000) >> 16));
+        }
+
+        printf("\n");
     }
 }

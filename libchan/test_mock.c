@@ -23,6 +23,8 @@ bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu);
 bool test_exec_device_busy(struct chan_out *chan, struct mock_cu *mock_cu);
 bool test_exec_reserved_command(struct chan_out *chan, struct mock_cu *mock_cu);
 bool test_exec_immediate_command(struct chan_out *chan, struct mock_cu *mock_cu);
+bool test_exec_read_command(char *case_name, struct chan_out *chan, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
+bool test_exec_write_command(char *case_name, struct chan_out *chan, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
 
 void buf_arrange(uint8_t *buf, size_t count);
 bool buf_assert(uint8_t *buf, size_t count);
@@ -60,6 +62,11 @@ int main(void)
     test_exec_device_busy(&chan, &mock_cu);
     test_exec_reserved_command(&chan, &mock_cu);
     test_exec_immediate_command(&chan, &mock_cu);
+    test_exec_read_command("channel_stop", &chan, 6, &mock_cu, 16, 6);
+    test_exec_read_command("cu_stop", &chan, 16, &mock_cu, 6, 6);
+    test_exec_write_command("channel_stop", &chan, 6, &mock_cu, 16, 6);
+    test_exec_write_command("cu_stop", &chan, 16, &mock_cu, 6, 6);
+    test_exec_read_command("big", &chan, 512, &mock_cu, 512, 512);
 
     mock_cu_close(&mock_cu);
 
@@ -337,6 +344,80 @@ bool test_exec_immediate_command(struct chan_out *chan, struct mock_cu *mock_cu)
 
     if (status != 0x0c) {
         printf("FAIL: expected 0x0c status: 0x%.2x\n", status);
+        return false;
+    }
+
+    printf("PASS\n");
+
+    return true;
+}
+
+bool test_exec_read_command(char *case_name, struct chan_out *chan, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
+{
+    printf("TEST: test_exec_read_command_%s\n", case_name);
+
+    udmabuf_clear(&chan->udmabuf, 0);
+
+    mock_cu_arrange(mock_cu, false, false, false, mock_cu_limit);
+
+    chan_out_enable(chan);
+    chan_out_config(chan, 0xff, true);
+
+    uint8_t cmd = 0x02; // READ
+
+    uint8_t buf[1024];
+    uint8_t status;
+
+    ssize_t result = chan_exec(chan, 0xff, cmd, 0, buf, count, &status);
+
+    if (result != expected_count) {
+        printf("FAIL: expected successful count %d bytes: %zd\n", expected_count, result);
+        return false;
+    }
+
+    if (!buf_assert(buf, result)) {
+        printf("FAIL: data received did not match expected data:\n");
+        dump(buf, result);
+        return false;
+    }
+
+    if (!mock_cu_assert(mock_cu, cmd, expected_count)) {
+        printf("FAIL: mock CU assertions failed\n");
+        return false;
+    }
+
+    printf("PASS\n");
+
+    return true;
+}
+
+bool test_exec_write_command(char *case_name, struct chan_out *chan, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
+{
+    printf("TEST: test_exec_write_command_%s\n", case_name);
+
+    udmabuf_clear(&chan->udmabuf, 0);
+
+    mock_cu_arrange(mock_cu, false, false, false, mock_cu_limit);
+
+    chan_out_enable(chan);
+    chan_out_config(chan, 0xff, true);
+
+    uint8_t cmd = 0x01; // WRITE
+
+    uint8_t buf[1024];
+    uint8_t status;
+
+    buf_arrange(buf, count);
+
+    ssize_t result = chan_exec(chan, 0xff, cmd, 0, buf, count, &status);
+
+    if (result != expected_count) {
+        printf("FAIL: expected successful count %d bytes: %zd\n", expected_count, result);
+        return false;
+    }
+
+    if (!mock_cu_assert(mock_cu, cmd, expected_count)) {
+        printf("FAIL: mock CU assertions failed\n");
         return false;
     }
 

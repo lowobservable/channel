@@ -464,48 +464,4 @@ module channel_out_protocol_tb;
         sink.recv(out);
     end
     endtask
-
-    /*
-    task test_nop_command;
-    begin
-        $display("START: test_nop_command");
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        #3;
-
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 0;
-
-        start_channel(8'h1a, 8'h03, 0); // NOP
-
-        #200;
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        $display("END: test_nop_command");
-    end
-    endtask
-
-    task test_invalid_command;
-    begin
-        $display("START: test_invalid_command");
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        #3;
-
-        cu_mock_busy = 0;
-        cu_mock_short_busy = 0;
-
-        start_channel(8'h1a, 8'hff, 6);
-
-        #200;
-
-        `assert_equal(protocol.state, protocol.STATE_IDLE, "channel state should be IDLE")
-
-        $display("END: test_invalid_command");
-    end
-    endtask
-    */
 endmodule

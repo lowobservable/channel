@@ -115,8 +115,10 @@ module axi_mm_channel_out (
     reg status_stacked;
     reg [7:0] command;
     reg [15:0] count;
+    reg [31:0] storage_address;
     reg start_pending;
     reg clear_start_pending;
+    reg increment = 0;
     reg [3:0] condition_code;
 
     // The control interface...
@@ -131,8 +133,8 @@ module axi_mm_channel_out (
     // D2:           | SSSS SSSS | PS     BA | CCCC    S <- Start / Start Pending
     //                             ^^     ^^--------------- Active
     //                             ++---------------------- Pending / Stacked
-    // D3: AAAA AAAA | AAAA AAAA | AAAA AAAA | AAAA AAAA <- Storage address
-    // D4: NNNN NNNN | NNNN NNNN |           | CCCC CCCC
+    // D3: NNNN NNNN | NNNN NNNN |           | CCCC CCCC
+    // D4: AAAA AAAA | AAAA AAAA | AAAA AAAA | AAAA AAAA <- Storage address
     //
     always @(posedge aclk)
     begin
@@ -179,12 +181,12 @@ module axi_mm_channel_out (
 
                 REG_DEVICE_3:
                 begin
-                    s_axi_rdata <= 32'b0;
+                    s_axi_rdata <= { count, 8'b0, command };
                 end
 
                 REG_DEVICE_4:
                 begin
-                    s_axi_rdata <= { count, 8'b0, command };
+                    s_axi_rdata <= storage_address;
                 end
 
                 default:
@@ -223,6 +225,12 @@ module axi_mm_channel_out (
         if (clear_start_pending)
         begin
             start_pending <= 0;
+        end
+
+        if (increment)
+        begin
+            count <= count - 1;
+            storage_address <= storage_address + 1;
         end
 
         s_axi_awready <= !waddr_loaded && !s_axi_bvalid;
@@ -292,14 +300,15 @@ module axi_mm_channel_out (
 
                 REG_DEVICE_3:
                 begin
-                    // TODO: Storage address not used yet
+                    // TODO: wstrb
+                    command <= wdata[7:0];
+                    count <= wdata[31:16];
                 end
 
                 REG_DEVICE_4:
                 begin
                     // TODO: wstrb
-                    command <= wdata[7:0];
-                    count <= wdata[31:16];
+                    storage_address <= wdata;
                 end
 
                 default:
@@ -350,13 +359,19 @@ module axi_mm_channel_out (
     localparam CHANNEL_STATE_REQUEST_1 = 4;
     localparam CHANNEL_STATE_REQUEST_2 = 5;
     localparam CHANNEL_STATE_CONNECTED = 6;
-    localparam CHANNEL_STATE_ACCEPT_STATUS_1 = 7;
-    localparam CHANNEL_STATE_ACCEPT_STATUS_2 = 8;
+    localparam CHANNEL_STATE_WAIT = 7;
+    localparam CHANNEL_STATE_ACCEPT_STATUS_1 = 8;
     localparam CHANNEL_STATE_STACK_STATUS_1 = 9;
-    localparam CHANNEL_STATE_STACK_STATUS_2 = 10;
-    localparam CHANNEL_STATE_TEST_IO_1 = 11;
-    localparam CHANNEL_STATE_TEST_IO_2 = 12;
-    localparam CHANNEL_STATE_TODO = 13;
+    localparam CHANNEL_STATE_SEND_DATA_1 = 10;
+    localparam CHANNEL_STATE_SEND_DATA_2 = 11;
+    localparam CHANNEL_STATE_SEND_DATA_3 = 12;
+    localparam CHANNEL_STATE_RECEIVE_DATA_1 = 13;
+    localparam CHANNEL_STATE_RECEIVE_DATA_2 = 14;
+    localparam CHANNEL_STATE_RECEIVE_DATA_3 = 15;
+    localparam CHANNEL_STATE_STOP = 16;
+    localparam CHANNEL_STATE_TEST_IO_1 = 17;
+    localparam CHANNEL_STATE_TEST_IO_2 = 18;
+    localparam CHANNEL_STATE_TODO = 19;
 
     reg [23:0] channel_in_tdata;
     reg channel_in_tvalid;
@@ -411,10 +426,17 @@ module axi_mm_channel_out (
         .a_suppress_out(a_suppress_out)
     );
 
+    reg storage_write;
+    wire [7:0] storage_data_read;
+    reg [7:0] storage_data_write;
+    reg storage_start = 0;
+    wire storage_done;
+
     always @(posedge aclk)
     begin
         // 1-clock pulses to communicate with channel state machine...
         clear_start_pending <= 0;
+        increment <= 0;
 
         if (clear_status_pending)
         begin
@@ -551,13 +573,13 @@ module axi_mm_channel_out (
                     end
                     else
                     begin
+                        subchannel_active <= !status[3]; // Channel End
+                        device_active <= !status[2]; // Device End
+
                         if (status != 8'h00) // Accepted
                         begin
                             status_pending <= 1;
                         end
-
-                        subchannel_active <= !status[3]; // Channel End
-                        device_active <= !status[2]; // Device End
 
                         if (!status[3])
                         begin
@@ -622,6 +644,16 @@ module axi_mm_channel_out (
                             end
                             else if (channel_out_tdata[15:8] == device_address && device_enable && !status_pending)
                             begin
+                                if (subchannel_active && channel_out_tdata[3]) // Channel End
+                                begin
+                                    subchannel_active <= 0;
+                                end
+
+                                if (device_active && channel_out_tdata[2]) // Device End
+                                begin
+                                    device_active <= 0;
+                                end
+
                                 status <= channel_out_tdata[7:0];
                                 status_pending <= 1;
                                 status_stacked <= 0;
@@ -635,10 +667,28 @@ module axi_mm_channel_out (
                                 channel_state <= CHANNEL_STATE_STACK_STATUS_1;
                             end
                         end
-                        // else if (channel_out_tdata[19:16] == 4'h2) // Data Service
-                        // begin
-                        //     // ...
-                        // end
+                        else if (channel_out_tdata[19:16] == 4'h2) // XXX - Service
+                        begin
+                            if (count == 16'b0)
+                            begin
+                                channel_state <= CHANNEL_STATE_STOP;
+                            end
+                            else if (command[0])
+                            begin
+                                channel_state <= CHANNEL_STATE_SEND_DATA_1;
+                            end
+                            else if (!channel_out_tdata[20])
+                            begin
+                                // Invalid parity...
+                                channel_state <= CHANNEL_STATE_TODO;
+                            end
+                            else
+                            begin
+                                storage_data_write <= channel_out_tdata[7:0];
+
+                                channel_state <= CHANNEL_STATE_RECEIVE_DATA_1;
+                            end
+                        end
                         else
                         begin
                             channel_state <= CHANNEL_STATE_TODO;
@@ -647,6 +697,25 @@ module axi_mm_channel_out (
                     else if (!channel_connected)
                     begin
                         channel_state <= CHANNEL_STATE_IDLE;
+                    end
+                end
+
+                CHANNEL_STATE_WAIT:
+                begin
+                    channel_out_tready <= 1;
+
+                    if (channel_out_tready && channel_out_tvalid)
+                    begin
+                        channel_out_tready <= 0;
+
+                        if (channel_connected)
+                        begin
+                            channel_state <= CHANNEL_STATE_CONNECTED;
+                        end
+                        else
+                        begin
+                            channel_state <= CHANNEL_STATE_IDLE;
+                        end
                     end
                 end
 
@@ -659,26 +728,7 @@ module axi_mm_channel_out (
                     begin
                         channel_in_tvalid <= 0;
 
-                        channel_state <= CHANNEL_STATE_ACCEPT_STATUS_2;
-                    end
-                end
-
-                CHANNEL_STATE_ACCEPT_STATUS_2:
-                begin
-                    channel_out_tready <= 1;
-
-                    if (channel_out_tready && channel_out_tvalid)
-                    begin
-                        channel_out_tready <= 0;
-
-                        if (channel_connected)
-                        begin
-                            channel_state <= CHANNEL_STATE_CONNECTED;
-                        end
-                        else
-                        begin
-                            channel_state <= CHANNEL_STATE_IDLE;
-                        end
+                        channel_state <= CHANNEL_STATE_WAIT;
                     end
                 end
 
@@ -691,26 +741,86 @@ module axi_mm_channel_out (
                     begin
                         channel_in_tvalid <= 0;
 
-                        channel_state <= CHANNEL_STATE_STACK_STATUS_2;
+                        channel_state <= CHANNEL_STATE_WAIT;
                     end
                 end
 
-                CHANNEL_STATE_STACK_STATUS_2:
+                CHANNEL_STATE_SEND_DATA_1:
                 begin
-                    channel_out_tready <= 1;
+                    storage_write <= 0;
+                    storage_start <= 1;
 
-                    if (channel_out_tready && channel_out_tvalid)
+                    channel_state <= CHANNEL_STATE_SEND_DATA_2;
+                end
+
+                CHANNEL_STATE_SEND_DATA_2:
+                begin
+                    storage_start <= 0;
+
+                    if (storage_done)
                     begin
-                        channel_out_tready <= 0;
+                        channel_state <= CHANNEL_STATE_SEND_DATA_3;
+                    end
+                end
 
-                        if (channel_connected)
-                        begin
-                            channel_state <= CHANNEL_STATE_CONNECTED;
-                        end
-                        else
-                        begin
-                            channel_state <= CHANNEL_STATE_IDLE;
-                        end
+                CHANNEL_STATE_SEND_DATA_3:
+                begin
+                    channel_in_tdata <= { 8'h04, storage_data_read, 8'h00 }; // XXX - Send Data
+                    channel_in_tvalid <= 1;
+
+                    if (channel_in_tready && channel_in_tvalid)
+                    begin
+                        channel_in_tvalid <= 0;
+
+                        increment <= 1;
+
+                        channel_state <= CHANNEL_STATE_WAIT;
+                    end
+                end
+
+                CHANNEL_STATE_RECEIVE_DATA_1:
+                begin
+                    storage_write <= 1;
+                    storage_start <= 1;
+
+                    channel_state <= CHANNEL_STATE_RECEIVE_DATA_2;
+                end
+
+                CHANNEL_STATE_RECEIVE_DATA_2:
+                begin
+                    storage_start <= 0;
+
+                    if (storage_done)
+                    begin
+                        channel_state <= CHANNEL_STATE_RECEIVE_DATA_3;
+                    end
+                end
+
+                CHANNEL_STATE_RECEIVE_DATA_3:
+                begin
+                    channel_in_tdata <= 24'h050000; // XXX - Accept Data
+                    channel_in_tvalid <= 1;
+
+                    if (channel_in_tready && channel_in_tvalid)
+                    begin
+                        channel_in_tvalid <= 0;
+
+                        increment <= 1;
+
+                        channel_state <= CHANNEL_STATE_WAIT;
+                    end
+                end
+
+                CHANNEL_STATE_STOP:
+                begin
+                    channel_in_tdata <= 24'h060000; // XXX - Stop
+                    channel_in_tvalid <= 1;
+
+                    if (channel_in_tready && channel_in_tvalid)
+                    begin
+                        channel_in_tvalid <= 0;
+
+                        channel_state <= CHANNEL_STATE_WAIT;
                     end
                 end
 
@@ -785,6 +895,37 @@ module axi_mm_channel_out (
             status_stacked <= 0;
         end
     end
+
+    axi_byte_io storage (
+        .aclk(aclk),
+        .aresetn(aresetn),
+
+        .busy(),
+        .addr(storage_address),
+        .write(storage_write),
+        .data_read(storage_data_read),
+        .data_write(storage_data_write),
+        .start(storage_start),
+        .done(storage_done),
+
+        .m_axi_araddr(m_axi_araddr),
+        .m_axi_arvalid(m_axi_arvalid),
+        .m_axi_arready(m_axi_arready),
+        .m_axi_rdata(m_axi_rdata),
+        .m_axi_rresp(m_axi_rresp),
+        .m_axi_rvalid(m_axi_rvalid),
+        .m_axi_rready(m_axi_rready),
+        .m_axi_awaddr(m_axi_awaddr),
+        .m_axi_awvalid(m_axi_awvalid),
+        .m_axi_awready(m_axi_awready),
+        .m_axi_wdata(m_axi_wdata),
+        .m_axi_wstrb(m_axi_wstrb),
+        .m_axi_wvalid(m_axi_wvalid),
+        .m_axi_wready(m_axi_wready),
+        .m_axi_bresp(m_axi_bresp),
+        .m_axi_bvalid(m_axi_bvalid),
+        .m_axi_bready(m_axi_bready)
+    );
 
     assign debug_0 = frontend_enable;
     assign debug_1 = channel_connected;

@@ -8,6 +8,8 @@
 
 #include <udmabuf.h>
 
+#define CHAN_CMD_BASIC_SENSE    0x04
+#define CHAN_CMD_SENSE_ID       0xe4
 #define CHAN_CMD_NOP            0x03
 
 #define CHAN_STATUS_ATTN        0x80    // Attention
@@ -47,12 +49,22 @@ int chan_out_config(struct chan_out *chan, uint8_t addr, bool enable);
 
 int chan_out_test(struct chan_out *chan, uint8_t addr, uint8_t *status);
 
+ssize_t chan_out_prepare(struct chan_out *chan, uint8_t cmd, void *buf, size_t count);
+
 int chan_out_start(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, size_t count);
+
+ssize_t chan_out_complete(struct chan_out *chan, uint8_t cmd, void *buf, size_t count);
 
 int chan_out_wrap_test(struct chan_out *chan, uint32_t driver, uint32_t *receiver);
 
 void chan_out_debug(struct chan_out *chan);
 
 ssize_t chan_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, void *buf, size_t count, uint8_t *status);
+
+ssize_t chan_exec_basic_sense(struct chan_out *chan, uint8_t addr, void *buf, size_t count, uint8_t *status);
+
+ssize_t chan_exec_sense_id(struct chan_out *chan, uint8_t addr, void *buf, size_t count, uint8_t *status);
+
+int chan_exec_nop(struct chan_out *chan, uint8_t addr, uint8_t *status);
 
 #endif

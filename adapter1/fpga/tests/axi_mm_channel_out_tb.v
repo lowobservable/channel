@@ -35,16 +35,28 @@ module axi_mm_channel_out_tb;
         .aclk(clk),
         .aresetn(!channel_reset),
 
-        .s_axi_araddr(master_bfm.m_axi_araddr),
-        .s_axi_arvalid(master_bfm.m_axi_arvalid),
-        .s_axi_rready(master_bfm.m_axi_rready),
-        .s_axi_awaddr(master_bfm.m_axi_awaddr),
-        .s_axi_awvalid(master_bfm.m_axi_awvalid),
-        .s_axi_wdata(master_bfm.m_axi_wdata),
-        .s_axi_wstrb(master_bfm.m_axi_wstrb),
-        .s_axi_wvalid(master_bfm.m_axi_wvalid),
-        .s_axi_bready(master_bfm.m_axi_bready),
+        // AXI4-Lite control interface...
+        .s_axi_araddr(control_bfm.m_axi_araddr),
+        .s_axi_arvalid(control_bfm.m_axi_arvalid),
+        .s_axi_rready(control_bfm.m_axi_rready),
+        .s_axi_awaddr(control_bfm.m_axi_awaddr),
+        .s_axi_awvalid(control_bfm.m_axi_awvalid),
+        .s_axi_wdata(control_bfm.m_axi_wdata),
+        .s_axi_wstrb(control_bfm.m_axi_wstrb),
+        .s_axi_wvalid(control_bfm.m_axi_wvalid),
+        .s_axi_bready(control_bfm.m_axi_bready),
 
+        // AXI4-Lite storage interface...
+        .m_axi_arready(storage_bfm.s_axi_arready),
+        .m_axi_rdata(storage_bfm.s_axi_rdata),
+        .m_axi_rresp(storage_bfm.s_axi_rresp),
+        .m_axi_rvalid(storage_bfm.s_axi_rvalid),
+        .m_axi_awready(storage_bfm.s_axi_awready),
+        .m_axi_wready(storage_bfm.s_axi_wready),
+        .m_axi_bresp(storage_bfm.s_axi_bresp),
+        .m_axi_bvalid(storage_bfm.s_axi_bvalid),
+
+        // Parallel Channel "A"...
         .a_bus_in(bus_in),
         .a_bus_in_parity(bus_in_parity),
         .a_bus_out(bus_out),
@@ -67,7 +79,7 @@ module axi_mm_channel_out_tb;
         .wrap_tester_receiver(wrap)
     );
 
-    axil_master_bfm master_bfm (
+    axil_master_bfm control_bfm (
         .aclk(clk),
 
         .m_axi_arready(channel.s_axi_arready),
@@ -78,6 +90,20 @@ module axi_mm_channel_out_tb;
         .m_axi_wready(channel.s_axi_wready),
         .m_axi_bresp(channel.s_axi_bresp),
         .m_axi_bvalid(channel.s_axi_bvalid)
+    );
+
+    axil_slave_bfm storage_bfm (
+        .aclk(clk),
+
+        .s_axi_araddr(channel.m_axi_araddr),
+        .s_axi_arvalid(channel.m_axi_arvalid),
+        .s_axi_rready(channel.m_axi_rready),
+        .s_axi_awaddr(channel.m_axi_awaddr),
+        .s_axi_awvalid(channel.m_axi_awvalid),
+        .s_axi_wdata(channel.m_axi_wdata),
+        .s_axi_wstrb(channel.m_axi_wstrb),
+        .s_axi_wvalid(channel.m_axi_wvalid),
+        .s_axi_bready(channel.m_axi_bready)
     );
 
     wire terminator;
@@ -150,7 +176,6 @@ module axi_mm_channel_out_tb;
         test_read_register;
         test_write_register;
         test_enable_disable_channel;
-        test_wrap_tester;
         test_unsolicited_status_device_disabled;
         test_unsolicited_status_device_enabled;
         test_start_device_disabled;
@@ -159,6 +184,11 @@ module axi_mm_channel_out_tb;
         test_start_device_busy;
         test_start_reserved_command;
         test_start_immediate_command;
+        test_read_command_channel_stop;
+        test_read_command_cu_stop;
+        test_write_command_channel_stop;
+        test_write_command_cu_stop;
+        test_wrap_tester;
 
         $finish;
     end
@@ -171,7 +201,7 @@ module axi_mm_channel_out_tb;
 
         reset;
 
-        master_bfm.read(channel.REG_CHANNEL_1, data, resp);
+        control_bfm.read(channel.REG_CHANNEL_1, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_equal(data, 32'b0, "register should be zero");
@@ -187,7 +217,7 @@ module axi_mm_channel_out_tb;
 
         reset;
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000000, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -202,7 +232,7 @@ module axi_mm_channel_out_tb;
 
         reset;
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -211,7 +241,7 @@ module axi_mm_channel_out_tb;
 
         repeat(10) @(posedge clk);
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000000, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -232,7 +262,7 @@ module axi_mm_channel_out_tb;
 
         // Enable only the wrap tester, in a practical design the frontend would
         // also need to be enabled for a wrap test.
-        master_bfm.write(channel.REG_CHANNEL_3, 32'hfffff100, resp);
+        control_bfm.write(channel.REG_CHANNEL_3, 32'hfffff100, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -240,12 +270,12 @@ module axi_mm_channel_out_tb;
 
         `assert_equal(channel.wrap_tester_driver, 20'hfffff, "wrap tester driver should be HIGH");
 
-        master_bfm.read(channel.REG_CHANNEL_4, data, resp);
+        control_bfm.read(channel.REG_CHANNEL_4, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_equal(data[31:12], channel.wrap_tester_receiver, "register should match receiver");
 
-        master_bfm.write(channel.REG_CHANNEL_3, 32'h00000000, resp);
+        control_bfm.write(channel.REG_CHANNEL_3, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -276,11 +306,11 @@ module axi_mm_channel_out_tb;
 
         @(posedge clk);
 
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000000, resp);
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -288,7 +318,7 @@ module axi_mm_channel_out_tb;
 
         while (!data[14])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -301,7 +331,7 @@ module axi_mm_channel_out_tb;
         `assert_high(data[14], "status should be stacked");
 
         // Enable the device.
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -309,7 +339,7 @@ module axi_mm_channel_out_tb;
 
         while (!data[15])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -323,11 +353,11 @@ module axi_mm_channel_out_tb;
         `assert_equal(data[23:16], 8'h85, "status should be ATTN + DE + UX");
 
         // Clear the pending status.
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.read(channel.REG_DEVICE_2, data, resp);
+        control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_low(data[15], "not status pending");
@@ -357,11 +387,11 @@ module axi_mm_channel_out_tb;
 
         @(posedge clk);
 
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -369,7 +399,7 @@ module axi_mm_channel_out_tb;
 
         while (!data[15])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -383,11 +413,11 @@ module axi_mm_channel_out_tb;
         `assert_equal(data[23:16], 8'h85, "status should be ATTN + DE + UX");
 
         // Clear the pending status.
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.read(channel.REG_DEVICE_2, data, resp);
+        control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_low(data[15], "not status pending");
@@ -404,24 +434,24 @@ module axi_mm_channel_out_tb;
 
         reset;
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000000, resp);
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
         // Start NOP.
-        master_bfm.write(channel.REG_DEVICE_3, 32'h00000000, resp);
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00000003, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_4, 32'h00000003, resp);
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -429,7 +459,7 @@ module axi_mm_channel_out_tb;
 
         while (data[0])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -454,24 +484,24 @@ module axi_mm_channel_out_tb;
 
         reset;
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1b000001, resp);
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1b000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
         // Start NOP.
-        master_bfm.write(channel.REG_DEVICE_3, 32'h00000000, resp);
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00000003, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_4, 32'h00000003, resp);
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -479,7 +509,7 @@ module axi_mm_channel_out_tb;
 
         while (data[0])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -517,11 +547,11 @@ module axi_mm_channel_out_tb;
 
         @(posedge clk);
 
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -529,7 +559,7 @@ module axi_mm_channel_out_tb;
 
         while (!data[15])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -543,15 +573,15 @@ module axi_mm_channel_out_tb;
         `assert_equal(data[23:16], 8'h85, "status should be ATTN + DE + UX");
 
         // Start NOP.
-        master_bfm.write(channel.REG_DEVICE_3, 32'h00000000, resp);
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00000003, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_4, 32'h00000003, resp);
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -559,7 +589,7 @@ module axi_mm_channel_out_tb;
 
         while (data[0])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -590,24 +620,24 @@ module axi_mm_channel_out_tb;
 
         @(posedge clk);
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
         // Start NOP.
-        master_bfm.write(channel.REG_DEVICE_3, 32'h00000000, resp);
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00000003, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_4, 32'h00000003, resp);
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -615,7 +645,7 @@ module axi_mm_channel_out_tb;
 
         while (data[0])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -646,24 +676,24 @@ module axi_mm_channel_out_tb;
 
         @(posedge clk);
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
         // Start TEST I/O.
-        master_bfm.write(channel.REG_DEVICE_3, 32'h00000000, resp);
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -671,7 +701,7 @@ module axi_mm_channel_out_tb;
 
         while (data[0])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -702,24 +732,24 @@ module axi_mm_channel_out_tb;
 
         @(posedge clk);
 
-        master_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
         // Start NOP.
-        master_bfm.write(channel.REG_DEVICE_3, 32'h00000000, resp);
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00000003, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_4, 32'h00000003, resp);
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
@@ -727,7 +757,7 @@ module axi_mm_channel_out_tb;
 
         while (data[0])
         begin
-            master_bfm.read(channel.REG_DEVICE_2, data, resp);
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
             `assert_equal(resp, 2'b00, "read should be successful");
 
@@ -743,17 +773,392 @@ module axi_mm_channel_out_tb;
         `assert_high(data[15], "status should be pending");
         `assert_equal(data[23:16], 8'h0c, "status should be CE + DE");
 
+        `assert_low(channel.subchannel_active, "not subchannel active");
+        `assert_low(channel.device_active, "not device active");
+
         // Clear the pending status.
-        master_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        master_bfm.read(channel.REG_DEVICE_2, data, resp);
+        control_bfm.read(channel.REG_DEVICE_2, data, resp);
 
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_low(data[15], "not status pending");
 
         $display("END: test_start_immediate_command");
+    end
+    endtask
+
+    task test_read_command_channel_stop;
+        reg [31:0] data;
+        reg [1:0] resp;
+    begin
+        $display("START: test_read_command_channel_stop");
+
+        reset;
+
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
+        cu_mock_limit <= 16; // CU can provide 16 bytes
+
+        @(posedge clk);
+
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        // Start READ with count 6.
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00060002, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        data = 32'b1;
+
+        while (data[0])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (data[0])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_low(data[0], "not start pending");
+        `assert_equal(data[7:4], 4'h0, "condition code should be started");
+
+        data = 32'b0;
+
+        while (!data[15])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (!data[15])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_high(data[15], "status should be pending");
+        `assert_equal(data[23:16], 8'h0c, "status should be CE + DE");
+
+        `assert_low(channel.subchannel_active, "not subchannel active");
+        `assert_low(channel.device_active, "not device active");
+
+        control_bfm.read(channel.REG_DEVICE_3, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+
+        `assert_equal(data[31:16], 0, "residual count should be 0");
+
+        // Clear the pending status.
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+        `assert_low(data[15], "not status pending");
+
+        $display("END: test_read_command_channel_stop");
+    end
+    endtask
+
+    task test_read_command_cu_stop;
+        reg [31:0] data;
+        reg [1:0] resp;
+    begin
+        $display("START: test_read_command_cu_stop");
+
+        reset;
+
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
+        cu_mock_limit <= 6; // CU can provide 6 bytes
+
+        @(posedge clk);
+
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        // Start READ with count 6.
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00100002, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        data = 32'b1;
+
+        while (data[0])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (data[0])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_low(data[0], "not start pending");
+        `assert_equal(data[7:4], 4'h0, "condition code should be started");
+
+        data = 32'b0;
+
+        while (!data[15])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (!data[15])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_high(data[15], "status should be pending");
+        `assert_equal(data[23:16], 8'h0c, "status should be CE + DE");
+
+        `assert_low(channel.subchannel_active, "not subchannel active");
+        `assert_low(channel.device_active, "not device active");
+
+        control_bfm.read(channel.REG_DEVICE_3, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+
+        `assert_equal(data[31:16], 10, "residual count should be 10");
+
+        // Clear the pending status.
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+        `assert_low(data[15], "not status pending");
+
+        $display("END: test_read_command_cu_stop");
+    end
+    endtask
+
+    task test_write_command_channel_stop;
+        reg [31:0] data;
+        reg [1:0] resp;
+    begin
+        $display("START: test_write_command_channel_stop");
+
+        reset;
+
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
+        cu_mock_limit <= 16; // CU can accept 16 bytes
+
+        @(posedge clk);
+
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        // Start WRITE with count 6.
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00060001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        data = 32'b1;
+
+        while (data[0])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (data[0])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_low(data[0], "not start pending");
+        `assert_equal(data[7:4], 4'h0, "condition code should be started");
+
+        data = 32'b0;
+
+        while (!data[15])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (!data[15])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_high(data[15], "status should be pending");
+        `assert_equal(data[23:16], 8'h0c, "status should be CE + DE");
+
+        `assert_low(channel.subchannel_active, "not subchannel active");
+        `assert_low(channel.device_active, "not device active");
+
+        control_bfm.read(channel.REG_DEVICE_3, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+
+        `assert_equal(data[31:16], 0, "residual count should be 0");
+
+        // Clear the pending status.
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+        `assert_low(data[15], "not status pending");
+
+        $display("END: test_write_command_channel_stop");
+    end
+    endtask
+
+    task test_write_command_cu_stop;
+        reg [31:0] data;
+        reg [1:0] resp;
+    begin
+        $display("START: test_write_command_cu_stop");
+
+        reset;
+
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
+        cu_mock_limit <= 6; // CU can accept 6 bytes
+
+        @(posedge clk);
+
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        // Start WRITE with count 6.
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00100001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        data = 32'b1;
+
+        while (data[0])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (data[0])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_low(data[0], "not start pending");
+        `assert_equal(data[7:4], 4'h0, "condition code should be started");
+
+        data = 32'b0;
+
+        while (!data[15])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (!data[15])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_high(data[15], "status should be pending");
+        `assert_equal(data[23:16], 8'h0c, "status should be CE + DE");
+
+        `assert_low(channel.subchannel_active, "not subchannel active");
+        `assert_low(channel.device_active, "not device active");
+
+        control_bfm.read(channel.REG_DEVICE_3, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+
+        `assert_equal(data[31:16], 10, "residual count should be 10");
+
+        // Clear the pending status.
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+        `assert_low(data[15], "not status pending");
+
+        $display("END: test_write_command_cu_stop");
     end
     endtask
 
