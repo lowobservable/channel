@@ -19,12 +19,12 @@ iconv_t ebcdic_conv;
 
 bool test(struct chan_out *chan, uint8_t addr);
 bool test_device(struct chan_out *chan, uint8_t addr);
-bool test_attn(struct chan_out *chan, uint8_t addr, uint8_t status);
-//bool exec_basic_sense(struct chan_out *chan, uint8_t addr);
-//bool exec_sense_id(struct chan_out *chan, uint8_t addr);
-//bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len);
-//bool exec_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid);
-size_t format_screen(uint8_t *buf, size_t buf_size, uint8_t aid);
+bool test_nop(struct chan_out *chan, uint8_t addr);
+bool test_sense_id(struct chan_out *chan, uint8_t addr);
+bool test_basic_sense(struct chan_out *chan, uint8_t addr);
+bool test_erase_write(struct chan_out *chan, uint8_t addr, bool first, uint8_t aid);
+bool test_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid);
+size_t format_screen(uint8_t *buf, size_t buf_size, bool first, uint8_t aid);
 ssize_t ebcdic_write(uint8_t *buf, size_t buf_size, char *ascii);
 
 int main(void)
@@ -93,7 +93,7 @@ bool test(struct chan_out *chan, uint8_t addr)
 
     uint8_t status;
 
-    int result = (int) chan_exec(chan, addr, CHAN_CMD_NOP, 0, NULL, 0, &status);
+    int result = chan_exec_nop(chan, addr, &status);
 
     if (result == 0) {
         if (!test_device(chan, addr)) {
@@ -111,6 +111,8 @@ bool test(struct chan_out *chan, uint8_t addr)
     }
 
     signal(SIGINT, signal_handler);
+
+    uint8_t aid = 0;
 
     while (!stop) {
         result = chan_out_test(chan, addr, &status);
@@ -135,8 +137,19 @@ bool test(struct chan_out *chan, uint8_t addr)
 
             device_online = true;
         } else if (device_online && status == CHAN_STATUS_ATTN) {
-            if (!test_attn(chan, addr, status)) {
+            printf("Device %.2x attention\n", addr);
+
+            if (!test_read_modified(chan, addr, &aid)) {
                 return false;
+            }
+
+            if (!test_erase_write(chan, addr, false, aid)) {
+                return false;
+            }
+
+            // Don't check for exit until after sending the screen...
+            if (aid == 0xf3) { // PF3
+                break;
             }
         } else {
             printf("Unsolicited status: 0x%.2x\n", status);
@@ -160,160 +173,176 @@ bool test_device(struct chan_out *chan, uint8_t addr)
 {
     printf("Device %.2x is online!\n", addr);
 
-    printf("NOP...\n");
-
-    uint8_t status;
-
-    ssize_t result = chan_exec(chan, addr, CHAN_CMD_NOP, 0, NULL, 0, &status);
-
-    if (result != 0) {
-        printf("\tresult = %zd\n", result);
+    if (!test_nop(chan, addr)) {
         return false;
     }
 
-    // Expect 0x0c (CE + DE)
-    printf("\tstatus = 0x%.2x\n", status);
+    if (!test_sense_id(chan, addr)) {
+        return false;
+    }
+
+    if (!test_basic_sense(chan, addr)) {
+        return false;
+    }
+
+    if (!test_erase_write(chan, addr, true, 0)) {
+        return false;
+    }
 
     return true;
 }
 
-bool test_attn(struct chan_out *chan, uint8_t addr, uint8_t status)
+bool test_nop(struct chan_out *chan, uint8_t addr)
 {
-    printf("Device %.2x attention\n", addr);
+    printf("NOP...");
+
+    uint8_t status;
+
+    int result = chan_exec_nop(chan, addr, &status);
+
+    if (result != 0) {
+        printf(" FAIL: result = %d\n", result);
+        return false;
+    }
+
+    if (status != 0x0c) {
+        printf(" FAIL: expected 0x0c status: 0x%.2x\n", status);
+        return false;
+    }
+
+    printf(" PASS\n");
 
     return true;
 }
 
-//bool exec_basic_sense(struct chan_out *chan, uint8_t addr)
-//{
-//    printf("BASIC SENSE...\n");
-//
-//    uint8_t buf[32];
-//
-//    ssize_t result = chan_out_exec(chan, 0x60, 0x04 /* BASIC SENSE */, buf, 32);
-//
-//    if (result < 0) {
-//        printf("\tresult = %zd\n", result);
-//        return false;
-//    }
-//
-//    uint8_t status = chan_out_device_status(chan);
-//
-//    printf("\tstatus = 0x%.2x\n", status);
-//
-//    size_t count = result;
-//
-//    printf("\tcount = %zu\n", count);
-//
-//    if (count < 1) {
-//        printf("\texpected at least 1 byte, got %zu\n", count);
-//        return false;
-//    }
-//
-//    dump(buf, count);
-//
-//    return true;
-//}
-//
-//bool exec_sense_id(struct chan_out *chan, uint8_t addr)
-//{
-//    printf("SENSE ID...\n");
-//
-//    uint8_t buf[7];
-//
-//    ssize_t result = chan_out_exec(chan, 0x60, 0xe4 /* SENSE ID */, buf, 7);
-//
-//    if (result < 0) {
-//        printf("\tresult = %zd\n", result);
-//        return false;
-//    }
-//
-//    uint8_t status = chan_out_device_status(chan);
-//
-//    printf("\tstatus = 0x%.2x\n", status);
-//
-//    size_t count = result;
-//
-//    printf("\tcount = %zu\n", count);
-//
-//    if (count < 4) {
-//        printf("\texpected at least 4 bytes, got %zu\n", count);
-//        return false;
-//    }
-//
-//    if (buf[0] != 0xff) {
-//        printf("\texpected first byte to be 0xff, got 0x%.2x\n", buf[0]);
-//        return false;
-//    }
-//
-//    printf("\tCU = %.2x%.2x-%.2x\n", buf[1], buf[2], buf[3]);
-//
-//    return true;
-//}
-//
-//bool exec_erase_write(struct chan_out *chan, uint8_t addr, uint8_t *buf, size_t buf_len)
-//{
-//    printf("ERASE/WRITE...\n");
-//
-//    ssize_t result = chan_out_exec(chan, addr, 0x05 /* ERASE/WRITE */, buf, buf_len);
-//
-//    if (result < 0) {
-//        printf("\tresult = %zd\n", result);
-//        return false;
-//    }
-//
-//    uint8_t status = chan_out_device_status(chan);
-//
-//    printf("\tstatus = 0x%.2x\n", status);
-//
-//    size_t count = result;
-//
-//    printf("\tcount = %zu\n", count);
-//
-//    if (count != buf_len) {
-//        printf("\texpected to write %zu bytes, wrote %zu\n", buf_len, count);
-//        return false;
-//    }
-//
-//    return true;
-//}
-//
-//bool exec_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid)
-//{
-//    printf("READ MODIFIED...\n");
-//
-//    uint8_t buf[64];
-//
-//    ssize_t result = chan_out_exec(chan, addr, 0x06 /* READ MODIFIED */, buf, 64);
-//
-//    if (result < 0) {
-//        printf("\tresult = %zd\n", result);
-//        return false;
-//    }
-//
-//    uint8_t status = chan_out_device_status(chan);
-//
-//    printf("\tstatus = 0x%.2x\n", status);
-//
-//    size_t count = result;
-//
-//    printf("\tcount = %zu\n", count);
-//
-//    if (count < 1) {
-//        printf("\texpected at least 1 byte, got %zu\n", count);
-//        return false;
-//    }
-//
-//    printf("\tAID = 0x%.2x\n", buf[0]);
-//
-//    if (aid != NULL) {
-//        *aid = buf[0];
-//    }
-//
-//    return true;
-//}
+bool test_sense_id(struct chan_out *chan, uint8_t addr)
+{
+    printf("SENSE ID...");
 
-size_t format_screen(uint8_t *buf, size_t buf_size, uint8_t aid)
+    uint8_t status;
+    uint8_t sense_id[7];
+
+    ssize_t result = chan_exec_sense_id(chan, addr, &sense_id, 7, &status);
+
+    if (result < 0) {
+        printf(" FAIL: result = %zd\n", result);
+        return false;
+    }
+
+    if (status != 0x0c) {
+        printf(" FAIL: expected 0x0c status: 0x%.2x\n", status);
+        return false;
+    }
+
+    if (result != 4) {
+        printf(" FAIL: expected 4 byte SENSE ID response from 3174-1L: %zd\n", result);
+        return false;
+    }
+
+    char type_model[8];
+
+    snprintf(type_model, 8, "%.2X%.2X-%.2X", sense_id[1], sense_id[2], sense_id[3]);
+
+    if (strncmp(type_model, "3174-1D", 7) != 0) {
+        printf(" FAIL: expected '3174-1D' SENSE ID response from 3174-1L: '%s'\n", type_model);
+        return false;
+    }
+
+    printf(" PASS: '%s'\n", type_model);
+
+    return true;
+}
+
+bool test_basic_sense(struct chan_out *chan, uint8_t addr)
+{
+    printf("BASIC SENSE...");
+
+    uint8_t status;
+    uint8_t sense;
+
+    ssize_t result = chan_exec_basic_sense(chan, addr, &sense, 32, &status);
+
+    if (result < 0) {
+        printf(" FAIL: result = %zd\n", result);
+        return false;
+    }
+
+    if (result != 1) {
+        printf(" FAIL: expected 1 byte BASIC SENSE response from 3174-1L: %zd\n", result);
+        return false;
+    }
+
+    printf(" PASS: sense = 0x%.2x\n", sense);
+
+    return true;
+}
+
+bool test_erase_write(struct chan_out *chan, uint8_t addr, bool first, uint8_t aid)
+{
+    printf("ERASE/WRITE...");
+
+    uint8_t buf[256];
+
+    size_t buf_len = format_screen(buf, sizeof(buf), first, aid);
+
+    uint8_t status;
+
+    ssize_t result = chan_exec(chan, addr, 0x05 /* ERASE/WRITE */, 0, buf, buf_len, &status);
+
+    if (result < 0) {
+        printf(" FAIL: result = %zd\n", result);
+        return false;
+    }
+
+    if (status != 0x0c) {
+        printf(" FAIL: status = %.2x\n", status);
+        return false;
+    }
+
+    if (result != buf_len) {
+        printf(" FAIL: expected to write %zu bytes: %zd\n", buf_len, result);
+        return false;
+    }
+
+    printf(" PASS\n");
+
+    return true;
+}
+
+bool test_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid)
+{
+    printf("READ MODIFIED...");
+
+    uint8_t buf[64];
+    uint8_t status;
+
+    ssize_t result = chan_exec(chan, addr, 0x06 /* READ MODIFIED */, 0, buf, 64, &status);
+
+    if (result < 0) {
+        printf(" FAIL: result = %zd\n", result);
+        return false;
+    }
+
+    if (status != 0x0c) {
+        printf(" FAIL: status = %.2x\n", status);
+        return false;
+    }
+
+    if (result < 1) {
+        printf(" FAIL: expected to read at least 1 byte: %zd\n", result);
+        return false;
+    }
+
+    printf(" PASS: AID = 0x%.2x\n", buf[0]);
+
+    if (aid != NULL) {
+        *aid = buf[0];
+    }
+
+    return true;
+}
+
+size_t format_screen(uint8_t *buf, size_t buf_size, bool first, uint8_t aid)
 {
     uint8_t *buf_p = buf;
 
@@ -326,7 +355,7 @@ size_t format_screen(uint8_t *buf, size_t buf_size, uint8_t aid)
     *buf_p++ = 0x1d; // SF
     *buf_p++ = 0xf8;
 
-    buf_p += ebcdic_write(buf_p, 80, "3174-1L TEST PROGRAM");
+    buf_p += ebcdic_write(buf_p, 80, "3174-1L LIBCHAN TEST PROGRAM");
 
     *buf_p++ = 0x11; // SBA
     *buf_p++ = 0xc2;
