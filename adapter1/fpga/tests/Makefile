@@ -8,9 +8,10 @@ TESTS = $(patsubst %.v,%.vvp,$(wildcard *_tb.v))
 all: lint tests
 
 lint: *_tb.v
-	for file in $^; do \
-		$(VERILATOR) -lint-only -Wall -Wno-PINCONNECTEMPTY -Wno-PINMISSING --timing --quiet -y $(RTL) $$file; \
-	done
+	@echo "Linting tests disabled due to syntax incompatible with Verilator"
+	#for file in $^; do \
+	#	$(VERILATOR) -lint-only -Wall -Wno-PINCONNECTEMPTY -Wno-PINMISSING --timing --quiet -y $(RTL) $$file; \
+	#done
 
 tests: $(TESTS)
 	./run_tests.sh

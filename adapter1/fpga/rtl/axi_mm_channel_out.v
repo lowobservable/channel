@@ -214,7 +214,9 @@ module axi_mm_channel_out (
     reg [7:0] waddr;
     reg waddr_loaded;
     reg [31:0] wdata;
+    // verilator lint_off UNUSEDSIGNAL
     reg [3:0] wstrb;
+    // verilator lint_on UNUSEDSIGNAL
     reg wdata_loaded;
 
     always @(posedge aclk)

@@ -74,7 +74,9 @@ module channel_out_protocol (
 
     // Parallel Channel "A"...
     input wire [7:0] a_bus_in,
+    // verilator lint_off UNUSEDSIGNAL
     input wire a_bus_in_parity,
+    // verilator lint_on UNUSEDSIGNAL
     output reg [7:0] a_bus_out,
     output reg a_bus_out_parity,
 
