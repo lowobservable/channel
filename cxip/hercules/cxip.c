@@ -119,7 +119,7 @@ static int cxip_init_handler(DEVBLK *dev, int argc, char **argv)
     struct sockaddr_in addr;
 
     addr.sin_family = AF_INET;
-    inet_pton(AF_INET, "192.168.1.132", &(addr.sin_addr));
+    inet_pton(AF_INET, "10.83.5.62", &(addr.sin_addr));
     addr.sin_port = htons(3174);
 
     if (connect(cxip->sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
