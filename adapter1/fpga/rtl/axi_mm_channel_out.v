@@ -845,8 +845,6 @@ module axi_mm_channel_out (
                     begin
                         channel_out_tready <= 0;
 
-                        status_stacked <= 0;
-
                         if (channel_out_tdata[19:16] == 4'h1) // XXX - Status
                         begin
                             if (!channel_out_tdata[20])
@@ -856,8 +854,19 @@ module axi_mm_channel_out (
                             end
                             else if (channel_out_tdata[15:8] == device_address && channel_out_tdata[23])
                             begin
+                                if (subchannel_active && channel_out_tdata[3]) // Channel End
+                                begin
+                                    subchannel_active <= 0;
+                                end
+
+                                if (device_active && channel_out_tdata[2]) // Device End
+                                begin
+                                    device_active <= 0;
+                                end
+
                                 status <= channel_out_tdata[7:0];
                                 status_pending <= 1;
+                                status_stacked <= 0;
 
                                 channel_state <= CHANNEL_STATE_IDLE;
                             end
