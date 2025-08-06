@@ -7,26 +7,37 @@ import time
 
 ENCODING = 'ibm037'
 
+CMD_NOP = 0x03
+CMD_SENSE_ID = 0xe4
+CMD_EW = 0x05 # Erase / Write
+CMD_RM = 0x06 # Read Modified
+
 def main():
-    addr = 0x60 # mock_cu = 0xff
+    addr = 0x60
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.connect(('ebaz1', 3174))
 
         cxip_ping(sock)
 
+        cxip_open(sock, addr)
+
         print('NOP...')
 
-        (status, _) = cxip_exec(sock, addr, 0x03) # NOP
+        (status, _) = cxip_exec(sock, addr, CMD_NOP)
 
         print(f'\tstatus = {status!r}')
+
+        ensure_device_end(sock, status)
 
         print('SENSE ID...')
 
-        (status, data) = cxip_exec(sock, addr, 0xe4, 7) # SENSE ID
+        (status, data) = cxip_exec(sock, addr, CMD_SENSE_ID, 7)
 
         print(f'\tstatus = {status!r}')
         print('\tdata = ' + ' '.join(['{0:02x}'.format(x) for x in data]))
+
+        ensure_device_end(sock, status)
 
         if data != b'\xff\x31\x74\x1d':
             print('Expected ID to be 31 74 1D for a 3174-1L...')
@@ -39,22 +50,30 @@ def main():
 
             print('ERASE/WRITE...')
 
-            (status, _) = cxip_exec(sock, addr, 0x05, screen) # ERASE/WRITE
+            (status, _) = cxip_exec(sock, addr, CMD_EW, screen)
 
             print(f'\tstatus = {status!r}')
 
-            wait_for_attn(sock)
+            ensure_device_end(sock, status)
 
-            print('ATTN...')
+            (_, status) = wait_for_status(sock)
 
-            (status, data) = cxip_exec(sock, addr, 0x06, 64) # READ MODIFIED
+            if Status.ATTN in status:
+                print('ATTN!')
+                print('READ MODIFIED...')
 
-            print(f'\tstatus = {status!r}')
-            print('\tdata = ' + ' '.join(['{0:02x}'.format(x) for x in data]))
+                (status, data) = cxip_exec(sock, addr, CMD_RM, 64)
 
-            aid = data[0]
+                print(f'\tstatus = {status!r}')
+                print('\tdata = ' + ' '.join(['{0:02x}'.format(x) for x in data]))
 
-            print(f'\taid = {aid:02x}')
+                ensure_device_end(sock, status)
+
+                aid = data[0]
+
+                print(f'\taid = {aid:02x}')
+            else:
+                print(f'Unexpected status: {status!r}')
 
 def format_screen(aid):
     screen = bytearray()
@@ -87,98 +106,106 @@ class Status(IntFlag):
     UX = 0x01
 
 def cxip_ping(sock):
-    send_msg(sock, b'\x01')
+    send_msg(sock, struct.pack('B', 0x01))
 
     while True:
         msg = recv_msg(sock)
 
-        # We can ignore status messages... actually, we probably shouldn't
-        # but this is just a hack anyway!
-        if msg[0] == 5:
-            continue
+        if msg[0] != 0x00:
+            raise Exception('Expected ACK response')
 
-        if msg != b'\x02':
-            raise Exception('Expected PONG')
+        return
+
+def cxip_open(sock, addr):
+    send_msg(sock, struct.pack('BB', 0x02, addr))
+
+    while True:
+        msg = recv_msg(sock)
+
+        if msg[0] != 0x00:
+            raise Exception('Expected ACK response')
 
         return
 
 def cxip_exec(sock, addr, cmd, data_or_count=None):
     flags = 0
 
-    is_write_command = bool(cmd & 0x01)
+    is_channel_send_cmd = bool(cmd & 0x01)
 
     data = b''
     count = 0
 
-    if is_write_command:
+    if is_channel_send_cmd:
         if data_or_count:
             data = bytes(data_or_count)
             count = len(data)
+
+        msg = struct.pack('!BBBB', 0x04, addr, cmd, flags) + data
     else:
         count = int(data_or_count)
 
-    msg = struct.pack('!BBBBH', 0x03, addr, cmd, flags, count) + data
+        msg = struct.pack('!BBBBH', 0x04, addr, cmd, flags, count)
 
     send_msg(sock, msg)
 
-    while True:
+    if count > 0:
         msg = recv_msg(sock)
 
-        # We can ignore status messages as they are generated async and
-        # will be outdated by the time we receive the EXEC response.
-        if msg[0] == 5:
-            continue
+        if msg[0] != 0x06:
+            raise Exception('Expected DATA response')
 
-        if msg[0] != 4:
-            raise Exception('Expected EXEC response')
-
-        (result, status, count) = struct.unpack('!BBH', msg[1:5])
-        data = msg[5:]
-
-        status = Status(status)
-
-        if result != 0:
-            raise Exception(f'EXEC error: {result}')
-
-        if is_write_command:
-            return (status, count)
+        if is_channel_send_cmd:
+            (count,) = struct.unpack('!H', msg[2:])
         else:
-            return (status, data)
+            data = msg[2:]
+            count = len(data)
 
-def wait_for_attn(sock):
-    while True:
-        msg = recv_msg(sock)
+    (_, status, solicited) = wait_for_status(sock)
 
-        if msg[0] != 5:
-            print(f'encountered {msg[0]} message while waiting for status')
-            continue
+    if not solicited:
+        raise Exception('Expected status to be solicited')
 
-        (addr, status) = struct.unpack('BB', msg[1:])
+    if is_channel_send_cmd:
+        return (status, count)
+    else:
+        return (status, data)
 
-        status = Status(status)
+def wait_for_status(sock):
+    msg = recv_msg(sock)
 
-        print(f'got status {status!r}')
+    if msg[0] != 0x05:
+        raise Exception('Expected STATUS response')
 
-        if status & Status.ATTN:
-            return status
+    (addr, status, flags) = struct.unpack('BBB', msg[1:])
+
+    status = Status(status)
+    solicited = bool(flags)
+
+    return (addr, status, solicited)
+
+def ensure_device_end(sock, status):
+    while Status.DE not in status:
+        (_, status, _) = wait_for_status(sock)
+
+    return status
 
 def send_msg(sock, msg):
-    sock.sendall(struct.pack('!H', len(msg)) + msg)
+    sock.sendall(struct.pack('!BH', 0, len(msg)) + msg)
 
 MSG_BUF = bytearray()
 
 def pop_msg():
-    if len(MSG_BUF) < 2:
+    if len(MSG_BUF) < 3:
         return None
 
-    (msg_len,) = struct.unpack('!H', MSG_BUF[:2])
+    (msg_version, msg_len) = struct.unpack('!BH', MSG_BUF[:3])
 
-    if len(MSG_BUF) < msg_len + 2:
+    if len(MSG_BUF) < msg_len + 3:
         return None
 
-    msg = bytes(MSG_BUF[2:msg_len+2])
+    msg = bytes(MSG_BUF[3:msg_len+3])
 
-    del MSG_BUF[:msg_len+2]
+    del MSG_BUF[0:msg_len+3]
 
     return msg
 
@@ -187,6 +214,15 @@ def recv_msg(sock):
         msg = pop_msg()
 
         if msg is not None:
+            if msg[0] == 0xff:
+                num = msg[1]
+                text = msg[2:].decode('ascii')
+
+                if num == 0:
+                    raise Exception(text)
+
+                raise Exception(f'{num}: {text}')
+
             return msg
 
         MSG_BUF.extend(sock.recv(1024))

@@ -2,97 +2,38 @@
 
 #include "hercules.h"
 
-#define CXIP_LOGMSG(...) logmsg(">>> CXIP <<< " __VA_ARGS__)
+#define CXIP_HOST "10.83.5.62"
+#define CXIP_PORT 3174
+#define CXIP_DEV_NUM 0x60 // 3174-1L
 
 #define MSG_BUF_SIZE 16000
 
+#define CXIP_LOGMSG(...) logmsg(">>> CXIP <<< " __VA_ARGS__)
+
 struct cxip {
+    uint8_t dev_addr;
     int sock;
     TID tid;
-    TID tid2;
     uint8_t msg_buf[MSG_BUF_SIZE];
     size_t msg_buf_len;
     HLOCK msg_lock;
-    COND msg_cond;
     bool msg_ready;
+    COND msg_cond1;
     COND msg_cond2;
+    bool error_sense_pending;
 };
 
-bool cxip_send_msg(struct cxip *cxip, uint8_t *msg, size_t len);
-ssize_t cxip_recv_msg(struct cxip *cxip, uint8_t *msg, size_t size);
+#define CXIP_MSG_TYPE_ACK 0x00
+#define CXIP_MSG_TYPE_OPEN 0x02
+#define CXIP_MSG_TYPE_START 0x04
+#define CXIP_MSG_TYPE_STATUS 0x05
+#define CXIP_MSG_TYPE_DATA 0x06
+#define CXIP_MSG_TYPE_ERROR 0xff
 
-static void *worker(void *arg)
-{
-    DEVBLK *dev = (DEVBLK *) arg;
-    struct cxip *cxip = (struct cxip *) dev->dev_data;
-
-    CXIP_LOGMSG("Worker thread started\n");
-
-    uint8_t buf[1024];
-    ssize_t result;
-
-    while ((result = read(cxip->sock, &buf, 1024)) > 0) {
-        size_t count = result;
-
-        hthread_mutex_lock(&cxip->msg_lock);
-
-        // Append the new bytes.
-        memcpy(cxip->msg_buf + cxip->msg_buf_len, buf, count);
-
-        cxip->msg_buf_len += count;
-
-        // Process complete messages.
-        while (true) {
-            if (cxip->msg_buf_len < 2) {
-                break;
-            }
-
-            size_t msg_len = (cxip->msg_buf[0] << 8) | cxip->msg_buf[1];
-
-            if (cxip->msg_buf_len < 2 + msg_len) {
-                break;
-            }
-
-            uint8_t msg_type = cxip->msg_buf[2];
-
-            CXIP_LOGMSG("Worker received %zu byte message (type = %.2x)\n", msg_len, msg_type);
-
-            if (msg_type == 0x05 /* STATUS */) {
-                uint8_t device_status = cxip->msg_buf[4];
-
-                device_attention(dev, device_status);
-            } else {
-
-                cxip->msg_ready = true;
-
-                // TODO: I shouldn't be writing multi-threaded C code...
-                hthread_mutex_unlock(&cxip->msg_lock);
-                hthread_cond_signal(&cxip->msg_cond);
-
-                // we are trying to yield here...
-
-                hthread_mutex_lock(&cxip->msg_lock);
-
-                while (cxip->msg_ready) {
-                    CXIP_LOGMSG("Worker waiting on message pickup...\n");
-
-                    hthread_cond_wait(&cxip->msg_cond2, &cxip->msg_lock);
-                }
-            }
-
-            // Move to the next message.
-            memmove(cxip->msg_buf, cxip->msg_buf + 2 + msg_len, 2 + msg_len);
-
-            cxip->msg_buf_len -= (2 + msg_len);
-        }
-
-        hthread_mutex_unlock(&cxip->msg_lock);
-    }
-
-    CXIP_LOGMSG("Worker thread done\n");
-
-    return NULL;
-}
+static void *cxip_worker(void *arg);
+static ssize_t cxip_get_msg(struct cxip *cxip, void *msg, size_t msg_size);
+static bool cxip_send_open_msg(struct cxip *cxip, uint8_t dev_addr);
+static bool cxip_send_start_msg(struct cxip *cxip, uint8_t dev_addr, uint8_t cmd, uint8_t flags, void *data, size_t count);
 
 static int cxip_init_handler(DEVBLK *dev, int argc, char **argv)
 {
@@ -107,30 +48,26 @@ static int cxip_init_handler(DEVBLK *dev, int argc, char **argv)
 
     struct cxip *cxip = (struct cxip *) dev->dev_data;
 
+    cxip->dev_addr = dev->devnum;
     cxip->sock = -1;
 
-    if ((cxip->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        free(dev->dev_data);
-        dev->dev_data = NULL;
+    cxip->dev_addr = CXIP_DEV_NUM;
 
-        return -1;
+    if ((cxip->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        goto error;
     }
 
     struct sockaddr_in addr;
 
     addr.sin_family = AF_INET;
-    inet_pton(AF_INET, "10.83.5.62", &(addr.sin_addr));
-    addr.sin_port = htons(3174);
+    inet_pton(AF_INET, CXIP_HOST, &(addr.sin_addr));
+    addr.sin_port = htons(CXIP_PORT);
 
-    if (connect(cxip->sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
-        CXIP_LOGMSG("Unable to connect\n");
+    int result;
 
-        close(cxip->sock);
-
-        free(dev->dev_data);
-        dev->dev_data = NULL;
-
-        return -1;
+    if ((result = connect(cxip->sock, (struct sockaddr *) &addr, sizeof(addr))) < 0) {
+        CXIP_LOGMSG("ERROR: Unable to connect: %d\n", result);
+        goto error;
     }
 
     CXIP_LOGMSG("Connected\n");
@@ -139,85 +76,45 @@ static int cxip_init_handler(DEVBLK *dev, int argc, char **argv)
     cxip->msg_ready = false;
 
     hthread_mutex_init(&cxip->msg_lock, NULL);
-    hthread_cond_init(&cxip->msg_cond);
+    hthread_cond_init(&cxip->msg_cond1);
     hthread_cond_init(&cxip->msg_cond2);
 
-    int result;
+    if ((result = create_thread(&cxip->tid, JOINABLE, cxip_worker, dev, "cxip_worker")) != 0) {
+        CXIP_LOGMSG("ERROR: Unable to create worker thread: %d\n", result);
+        goto error;
+    }
 
-    if ((result = create_thread(&cxip->tid, JOINABLE, worker, dev, "cxip_worker")) != 0) {
-        CXIP_LOGMSG("Error creating worker thread: %d\n", result);
-        return -1;
+    // Need to delay opening the device until the worker thread has been
+    // started.
+    if (!cxip_send_open_msg(cxip, cxip->dev_addr)) {
+        CXIP_LOGMSG("ERROR: Unable to send open message\n");
+        goto error;
+    }
+
+    uint8_t msg[MSG_BUF_SIZE];
+
+    ssize_t msg_len = cxip_get_msg(cxip, &msg, MSG_BUF_SIZE);
+
+    if (msg_len != 1 && msg[0] != CXIP_MSG_TYPE_ACK) {
+        // TODO: try reading this as an error message...
+
+        CXIP_LOGMSG("ERROR: Something went wrong opening device\n");
+        goto error;
     }
 
     CXIP_LOGMSG("Ready\n");
 
     return 0;
-}
 
-static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags,
-        BYTE chained, U32 count, BYTE prevcode, int ccwseq,
-        BYTE *iobuf, BYTE *more, BYTE *unitstat, U32 *residual)
-{
-    UNREFERENCED(flags);
-    UNREFERENCED(chained);
-    UNREFERENCED(prevcode);
-    UNREFERENCED(ccwseq);
-
-    struct cxip *cxip = (struct cxip *) dev->dev_data;
-
-    *residual = 0;
-    *more = 0;
-
-    CXIP_LOGMSG("Executing cmd = %.2x, count = %u\n", code, count);
-
-    uint8_t msg[MSG_BUF_SIZE];
-
-    msg[0] = 0x03; // EXEC
-    msg[1] = dev->devnum;
-    msg[2] = code;
-    msg[3] = 0; // TODO: flags
-    msg[4] = (count >> 8) & 0xff;
-    msg[5] = count & 0xff;
-
-    bool is_write_command = code & 0x01;
-
-    if (is_write_command) {
-        memcpy(msg + 6, iobuf, count);
+error:
+    if (cxip->sock != -1) {
+        close(cxip->sock);
     }
 
-    cxip_send_msg(cxip, msg, 6 + (is_write_command ? count : 0));
+    free(dev->dev_data);
+    dev->dev_data = NULL;
 
-    ssize_t result = cxip_recv_msg(cxip, msg, MSG_BUF_SIZE);
-
-    if (msg[0] != 0x04) {
-        CXIP_LOGMSG("Unexpected EXEC response message\n");
-        return;
-    }
-
-    if (!(msg[1] == 0 || msg[1] == 4 || msg[1] == 5 || msg[1] == 6)) {
-        CXIP_LOGMSG("EXEC error: %d\n", msg[1]);
-        return;
-    }
-
-    uint8_t device_status = msg[2];
-    size_t actual_count = (msg[3] << 8) | msg[4];
-
-    CXIP_LOGMSG("    status = %.2x, transfer count = %zu\n", device_status, actual_count);
-
-    if (is_write_command) {
-        *residual = count - actual_count;
-        //*more = ... // TODO
-    } else {
-        memcpy(iobuf, msg + 5, actual_count);
-
-        *residual = count - actual_count;
-    }
-
-    *unitstat = device_status;
-
-    CXIP_LOGMSG("    residual = %u, more = %d\n", *residual, *more);
-
-    // TODO: poor man's concurrent sense
+    return -1;
 }
 
 static int cxip_close_device(DEVBLK *dev)
@@ -234,9 +131,10 @@ static int cxip_close_device(DEVBLK *dev)
         close(cxip->sock);
     }
 
-    // TODO: what about the worker thread?
+    // TODO: What about the worker thread? Is it interrupted by closing the
+    // socket, if so we could join now to ensure it is complete.
 
-    hthread_cond_destroy(&cxip->msg_cond);
+    hthread_cond_destroy(&cxip->msg_cond1);
     hthread_cond_destroy(&cxip->msg_cond2);
     hthread_mutex_destroy(&cxip->msg_lock);
 
@@ -246,8 +144,7 @@ static int cxip_close_device(DEVBLK *dev)
     return 0;
 }
 
-static void cxip_query_device(DEVBLK *dev, char **devclass, int buflen,
-        char *buffer)
+static void cxip_query_device(DEVBLK *dev, char **devclass, int buflen, char *buffer)
 {
     UNREFERENCED(dev);
     UNREFERENCED(devclass);
@@ -255,50 +152,133 @@ static void cxip_query_device(DEVBLK *dev, char **devclass, int buflen,
     UNREFERENCED(buffer);
 }
 
-// vvv
-bool cxip_send_msg(struct cxip *cxip, uint8_t *msg, size_t len)
+static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U32 count, BYTE prevcode, int ccwseq, BYTE *iobuf, BYTE *more, BYTE *unitstat, U32 *residual)
 {
-    CXIP_LOGMSG("Sending %zu byte message\n", len);
+    UNREFERENCED(flags);
+    UNREFERENCED(chained);
+    UNREFERENCED(prevcode);
+    UNREFERENCED(ccwseq);
 
-    uint8_t buf[2];
+    struct cxip *cxip = (struct cxip *) dev->dev_data;
 
-    buf[0] = (len >> 8) & 0xff;
-    buf[1] = len & 0xff;
+    CXIP_LOGMSG("Starting, C=%.2x, N=%u\n", code, count);
 
-    if (write(cxip->sock, buf, 2) < 2) {
-        return false;
+    *residual = count;
+    *more = 0;
+
+    uint16_t actual_count = 0;
+
+    if (cxip->error_sense_pending && code == 0x04) {
+        CXIP_LOGMSG("Returning pending error sense data\n");
+
+        actual_count = MIN(dev->numsense, count);
+
+        *residual -= actual_count;
+
+        if (actual_count < count) {
+            *more = 1;
+        }
+
+        memcpy(iobuf, dev->sense, actual_count);
+
+        memset(dev->sense, 0, dev->numsense);
+
+        cxip->error_sense_pending = false;
+        return;
     }
 
-    if (write(cxip->sock, msg, len) < (ssize_t) len) {
-        return false;
+    bool is_send_cmd = code & 0x01;
+
+    if (!cxip_send_start_msg(cxip, cxip->dev_addr, code, 0, is_send_cmd ? iobuf : NULL, count)) {
+        CXIP_LOGMSG("ERROR: Unable to send start message\n");
+        goto error;
     }
 
-    return true;
+    uint8_t cumulative_status = 0;
+
+    do {
+        uint8_t msg[MSG_BUF_SIZE];
+
+        ssize_t msg_len = cxip_get_msg(cxip, &msg, MSG_BUF_SIZE);
+
+        if (msg_len < 0) {
+            // TODO: This would be an "error" getting a message.
+            CXIP_LOGMSG("ERROR: Unable to get message\n");
+            goto error;
+        }
+
+        if (msg_len < 1) {
+            // TODO: This would be an invalid message.
+            CXIP_LOGMSG("ERROR: Invalid message\n");
+            goto error;
+        }
+
+        uint8_t msg_type = msg[0];
+
+        if (msg_type == CXIP_MSG_TYPE_DATA && is_send_cmd && msg_len == 4) {
+            actual_count = (msg[2] << 8) | msg[3];
+        } else if (msg_type == CXIP_MSG_TYPE_DATA && !is_send_cmd && msg_len >= 2) {
+            actual_count = msg_len - 2;
+
+            memcpy(iobuf, msg + 2, actual_count);
+        } else if (msg_type == CXIP_MSG_TYPE_STATUS && msg_len == 4) {
+            uint8_t status = msg[2];
+
+            cumulative_status |= status;
+        } else if (msg_type == CXIP_MSG_TYPE_ERROR && msg_len > 1) {
+            uint8_t error_num = msg[1];
+
+            // TODO: Some of these need to be handled differently...
+            if (error_num == 6) {
+                cumulative_status = CSW_BUSY;
+                break;
+            }
+
+            char error_text[101];
+
+            memset(error_text, 0, 101);
+
+            bool has_text = false;
+
+            if (msg_len - 2 > 0) {
+                strncpy(error_text, &msg[2], MIN(msg_len - 2, 100));
+
+                has_text = true;
+            }
+
+            if (error_num == 0) {
+                CXIP_LOGMSG("ERROR: %s\n", has_text ? error_text : "Unknown error");
+            } else if (has_text) {
+                CXIP_LOGMSG("ERROR: %s (%d)\n", error_text, error_num);
+            } else {
+                CXIP_LOGMSG("ERROR: %d\n", error_num);
+            }
+
+            goto error;
+        } else {
+            // TODO: This would be an invalid message.
+            CXIP_LOGMSG("ERROR: Invalid or unexpected message\n");
+        }
+    } while (!(cumulative_status & CSW_DE));
+
+    *unitstat = cumulative_status;
+    *residual -= actual_count;
+
+    CXIP_LOGMSG("Complete, CS=%.2x, N1=%u, N2=%u, N3=%u\n", *unitstat, count, actual_count, *residual);
+    return;
+
+error:
+    // TODO: This may not be applicable to all devices, certainly not all
+    // errors.
+    CXIP_LOGMSG("Simulating unit check with intervention required sense\n");
+
+    dev->sense[0] = SENSE_IR;
+    dev->numsense = 1;
+
+    *unitstat = CSW_UC;
+
+    cxip->error_sense_pending = true;
 }
-
-ssize_t cxip_recv_msg(struct cxip *cxip, uint8_t *msg, size_t size)
-{
-    hthread_mutex_lock(&cxip->msg_lock);
-
-    while (!cxip->msg_ready) {
-        hthread_cond_wait(&cxip->msg_cond, &cxip->msg_lock);
-    }
-
-    size_t len = (cxip->msg_buf[0] << 8) | cxip->msg_buf[1];
-
-    CXIP_LOGMSG("Received %zu byte message\n", len);
-
-    memcpy(msg, cxip->msg_buf + 2, len);
-
-    cxip->msg_ready = false;
-
-    hthread_mutex_unlock(&cxip->msg_lock);
-
-    hthread_cond_signal(&cxip->msg_cond2);
-
-    return len;
-}
-// ^^^
 
 static BYTE  xxx_loc3270_immed [256] =
 
@@ -337,7 +317,7 @@ static DEVHND cxip_device_hndinfo = {
     NULL,                   // Device reserve
     NULL,                   // Device release
     NULL,                   // Device attention
-    xxx_loc3270_immed,                   // Immediate CCW codes
+    xxx_loc3270_immed,      // Immediate CCW codes
     NULL,                   // Signal adapter input
     NULL,                   // Signal adapter output
     NULL,                   // Signal adapter sync
@@ -361,3 +341,177 @@ HDL_DEVICE_SECTION;
     HDL_DEVICE(CXIP, cxip_device_hndinfo);
 }
 END_DEVICE_SECTION;
+
+void *cxip_worker(void *arg)
+{
+    DEVBLK *dev = (DEVBLK *) arg;
+    struct cxip *cxip = (struct cxip *) dev->dev_data;
+
+    CXIP_LOGMSG("[Worker] Thread started\n");
+
+    uint8_t buf[1024];
+    ssize_t result;
+
+    while ((result = read(cxip->sock, &buf, 1024)) > 0) {
+        hthread_mutex_lock(&cxip->msg_lock);
+
+        // Append the new bytes.
+        memcpy(cxip->msg_buf + cxip->msg_buf_len, buf, result);
+
+        cxip->msg_buf_len += result;
+
+        // Process complete messages.
+        while (true) {
+            if (cxip->msg_buf_len < 3) {
+                break;
+            }
+
+            size_t msg_len = (cxip->msg_buf[1] << 8) | cxip->msg_buf[2];
+
+            if (cxip->msg_buf_len < 3 + msg_len) {
+                break;
+            }
+
+            if (msg_len > 0) {
+                uint8_t msg_type = cxip->msg_buf[3];
+
+                //CXIP_LOGMSG("[Worker] Received %zu byte message (type = %.2x)\n", msg_len, msg_type);
+
+                if (msg_type == CXIP_MSG_TYPE_STATUS && msg_len == 4 && !cxip->msg_buf[6]) {
+                    uint8_t status = cxip->msg_buf[5];
+
+                    CXIP_LOGMSG("[Worker] Unsolicited status = %.2x\n", status);
+
+                    int result = device_attention(dev, status);
+
+                    if (result == 1) {
+                        // TODO: What to do, queue this?
+                        CXIP_LOGMSG("ERROR: Hercules device is busy or pending\n");
+                    } else if (result == 3) {
+                        // TODO: What to do, ignore this or queue it?
+                        CXIP_LOGMSG("ERROR: Hercules subchannel not valid or not enabled\n");
+                    }
+                } else {
+                    cxip->msg_ready = true;
+
+                    // TODO: I shouldn't be writing multi-threaded C code, we are
+                    // trying to yield to execute CCW or other function here.
+                    hthread_mutex_unlock(&cxip->msg_lock);
+                    hthread_cond_signal(&cxip->msg_cond1);
+
+                    hthread_mutex_lock(&cxip->msg_lock);
+
+                    while (cxip->msg_ready) {
+                        //CXIP_LOGMSG("[Worker] Waiting for message to be read...\n");
+
+                        hthread_cond_wait(&cxip->msg_cond2, &cxip->msg_lock);
+                    }
+                }
+            } else {
+                CXIP_LOGMSG("[Worker] Invalid message, ignoring\n");
+            }
+
+            // Move to the next message.
+            //CXIP_LOGMSG("[Worker] Message read, moving to the next message\n");
+
+            memmove(cxip->msg_buf, cxip->msg_buf + 3 + msg_len, 3 + msg_len);
+
+            cxip->msg_buf_len -= (3 + msg_len);
+        }
+
+        hthread_mutex_unlock(&cxip->msg_lock);
+    }
+
+    CXIP_LOGMSG("[Worker] Thread done\n");
+
+    return NULL;
+}
+
+ssize_t cxip_get_msg(struct cxip *cxip, void *msg, size_t msg_size)
+{
+    hthread_mutex_lock(&cxip->msg_lock);
+
+    while (!cxip->msg_ready) {
+        hthread_cond_wait(&cxip->msg_cond1, &cxip->msg_lock);
+    }
+
+    size_t len = (cxip->msg_buf[1] << 8) | cxip->msg_buf[2];
+
+    //CXIP_LOGMSG("Got %zu byte message\n", len);
+
+    ssize_t result;
+
+    if (len <= msg_size) {
+        memcpy(msg, cxip->msg_buf + 3, len);
+
+        result = len;
+    } else {
+        result = -1;
+    }
+
+    cxip->msg_ready = false;
+
+    hthread_mutex_unlock(&cxip->msg_lock);
+
+    hthread_cond_signal(&cxip->msg_cond2);
+
+    return result;
+}
+
+bool cxip_send_open_msg(struct cxip *cxip, uint8_t dev_addr)
+{
+    uint8_t buf[5];
+
+    buf[0] = 0;
+    buf[1] = 0;
+    buf[2] = 2;
+    buf[3] = CXIP_MSG_TYPE_OPEN;
+    buf[4] = dev_addr;
+
+    if (write(cxip->sock, &buf, 5) < 5) {
+        return false;
+    }
+
+    return true;
+}
+
+bool cxip_send_start_msg(struct cxip *cxip, uint8_t dev_addr, uint8_t cmd, uint8_t flags, void *data, size_t count)
+{
+    size_t len = 4;
+
+    if (data != NULL) {
+        len += count;
+    } else {
+        len += 2;
+    }
+
+    uint8_t buf[9];
+
+    buf[0] = 0;
+    buf[1] = (len & 0xff00) >> 8;
+    buf[2] = len & 0x00ff;
+    buf[3] = CXIP_MSG_TYPE_START;
+    buf[4] = dev_addr;
+    buf[5] = cmd;
+    buf[6] = flags;
+
+    if (data == NULL) {
+        buf[7] = (count & 0xff00) >> 8;
+        buf[8] = count & 0x00ff;
+    }
+
+    // Now, make len the buffer length.
+    len = (data != NULL) ? 7 : 9;
+
+    if (write(cxip->sock, &buf, len) < (ssize_t) len) {
+        return false;
+    }
+
+    if (data != NULL) {
+        if (write(cxip->sock, data, count) < (ssize_t) count) {
+            return false;
+        }
+    }
+
+    return true;
+}

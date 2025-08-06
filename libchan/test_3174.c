@@ -17,15 +17,15 @@
 
 iconv_t ebcdic_conv;
 
-bool test(struct chan_out *chan, uint8_t addr);
-bool test_device(struct chan_out *chan, uint8_t addr);
-bool test_nop(struct chan_out *chan, uint8_t addr);
-bool test_sense_id(struct chan_out *chan, uint8_t addr);
-bool test_basic_sense(struct chan_out *chan, uint8_t addr);
-bool test_erase_write(struct chan_out *chan, uint8_t addr, bool first, uint8_t aid);
-bool test_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid);
-size_t format_screen(uint8_t *buf, size_t buf_size, bool first, uint8_t aid);
-ssize_t ebcdic_write(uint8_t *buf, size_t buf_size, char *ascii);
+static bool test(struct chan_out *out, uint8_t addr);
+static bool test_device(struct chan_out *out, uint8_t addr);
+static bool test_nop(struct chan_out *out, uint8_t addr);
+static bool test_sense_id(struct chan_out *out, uint8_t addr);
+static bool test_basic_sense(struct chan_out *out, uint8_t addr);
+static bool test_erase_write(struct chan_out *out, uint8_t addr, bool first, uint8_t aid);
+static bool test_read_modified(struct chan_out *out, uint8_t addr, uint8_t *aid);
+static size_t format_screen(uint8_t *buf, size_t buf_size, bool first, uint8_t aid);
+static ssize_t ebcdic_write(uint8_t *buf, size_t buf_size, char *ascii);
 
 int main(void)
 {
@@ -41,20 +41,20 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    struct chan_out chan;
+    struct chan_out out;
 
-    if (chan_out_open(&chan, 0x40000000, mem_fd, "udmabuf0", true) < 0) {
+    if (chan_out_open(&out, mem_fd, "udmabuf0", true) < 0) {
         perror("chan_open");
         return EXIT_FAILURE;
     }
 
-    chan_out_enable(&chan);
+    chan_out_enable(&out);
 
     printf("READY\n");
 
-    test(&chan, 0x60);
+    test(&out, 0x60);
 
-    chan_out_close(&chan);
+    chan_out_close(&out);
 
     close(mem_fd);
 
@@ -65,16 +65,16 @@ int main(void)
 
 volatile bool stop = false;
 
-void signal_handler(int signum)
+static void signal_handler(int signum)
 {
     if (signum == SIGINT) {
         stop = true;
     }
 }
 
-bool test(struct chan_out *chan, uint8_t addr)
+bool test(struct chan_out *out, uint8_t addr)
 {
-    chan_out_config(chan, addr, false);
+    chan_out_config(out, addr, false);
 
     printf("Device %.2x disabled, press ENTER to enable...\n", addr);
 
@@ -83,9 +83,9 @@ bool test(struct chan_out *chan, uint8_t addr)
 
     getline(&line, &len, stdin);
 
-    chan_out_debug(chan);
+    chan_out_debug(out);
 
-    chan_out_config(chan, addr, true);
+    chan_out_config(out, addr, true);
 
     printf("Device %.2x enabled...\n", addr);
 
@@ -93,10 +93,10 @@ bool test(struct chan_out *chan, uint8_t addr)
 
     uint8_t status;
 
-    int result = chan_exec_nop(chan, addr, &status);
+    int result = chan_exec_nop(out, addr, &status);
 
     if (result == 0) {
-        if (!test_device(chan, addr)) {
+        if (!test_device(out, addr)) {
             return false;
         }
 
@@ -115,7 +115,7 @@ bool test(struct chan_out *chan, uint8_t addr)
     uint8_t aid = 0;
 
     while (!stop) {
-        result = chan_out_test(chan, addr, &status);
+        result = chan_out_test(out, addr, &status);
 
         if (result < 0) {
             printf("chan_out_test error: %d\n", result);
@@ -131,7 +131,7 @@ bool test(struct chan_out *chan, uint8_t addr)
         // device goes offline...
 
         if (status == CHAN_STATUS_DE) {
-            if (!test_device(chan, addr)) {
+            if (!test_device(out, addr)) {
                 return false;
             }
 
@@ -139,11 +139,11 @@ bool test(struct chan_out *chan, uint8_t addr)
         } else if (device_online && status == CHAN_STATUS_ATTN) {
             printf("Device %.2x attention\n", addr);
 
-            if (!test_read_modified(chan, addr, &aid)) {
+            if (!test_read_modified(out, addr, &aid)) {
                 return false;
             }
 
-            if (!test_erase_write(chan, addr, false, aid)) {
+            if (!test_erase_write(out, addr, false, aid)) {
                 return false;
             }
 
@@ -164,41 +164,41 @@ bool test(struct chan_out *chan, uint8_t addr)
         printf("Stopped\n");
     }
 
-    chan_out_debug(chan);
+    chan_out_debug(out);
 
     return true;
 }
 
-bool test_device(struct chan_out *chan, uint8_t addr)
+bool test_device(struct chan_out *out, uint8_t addr)
 {
     printf("Device %.2x is online!\n", addr);
 
-    if (!test_nop(chan, addr)) {
+    if (!test_nop(out, addr)) {
         return false;
     }
 
-    if (!test_sense_id(chan, addr)) {
+    if (!test_sense_id(out, addr)) {
         return false;
     }
 
-    if (!test_basic_sense(chan, addr)) {
+    if (!test_basic_sense(out, addr)) {
         return false;
     }
 
-    if (!test_erase_write(chan, addr, true, 0)) {
+    if (!test_erase_write(out, addr, true, 0)) {
         return false;
     }
 
     return true;
 }
 
-bool test_nop(struct chan_out *chan, uint8_t addr)
+bool test_nop(struct chan_out *out, uint8_t addr)
 {
     printf("NOP...");
 
     uint8_t status;
 
-    int result = chan_exec_nop(chan, addr, &status);
+    int result = chan_exec_nop(out, addr, &status);
 
     if (result != 0) {
         printf(" FAIL: result = %d\n", result);
@@ -215,14 +215,14 @@ bool test_nop(struct chan_out *chan, uint8_t addr)
     return true;
 }
 
-bool test_sense_id(struct chan_out *chan, uint8_t addr)
+bool test_sense_id(struct chan_out *out, uint8_t addr)
 {
     printf("SENSE ID...");
 
     uint8_t status;
     uint8_t sense_id[7];
 
-    ssize_t result = chan_exec_sense_id(chan, addr, &sense_id, 7, &status);
+    ssize_t result = chan_exec_sense_id(out, addr, &sense_id, 7, &status);
 
     if (result < 0) {
         printf(" FAIL: result = %zd\n", result);
@@ -253,14 +253,14 @@ bool test_sense_id(struct chan_out *chan, uint8_t addr)
     return true;
 }
 
-bool test_basic_sense(struct chan_out *chan, uint8_t addr)
+bool test_basic_sense(struct chan_out *out, uint8_t addr)
 {
     printf("BASIC SENSE...");
 
     uint8_t status;
     uint8_t sense;
 
-    ssize_t result = chan_exec_basic_sense(chan, addr, &sense, 32, &status);
+    ssize_t result = chan_exec_basic_sense(out, addr, &sense, 32, &status);
 
     if (result < 0) {
         printf(" FAIL: result = %zd\n", result);
@@ -277,7 +277,7 @@ bool test_basic_sense(struct chan_out *chan, uint8_t addr)
     return true;
 }
 
-bool test_erase_write(struct chan_out *chan, uint8_t addr, bool first, uint8_t aid)
+bool test_erase_write(struct chan_out *out, uint8_t addr, bool first, uint8_t aid)
 {
     printf("ERASE/WRITE...");
 
@@ -287,7 +287,7 @@ bool test_erase_write(struct chan_out *chan, uint8_t addr, bool first, uint8_t a
 
     uint8_t status;
 
-    ssize_t result = chan_exec(chan, addr, 0x05 /* ERASE/WRITE */, 0, buf, buf_len, &status);
+    ssize_t result = chan_exec(out, addr, 0x05 /* ERASE/WRITE */, 0, buf, buf_len, &status);
 
     if (result < 0) {
         printf(" FAIL: result = %zd\n", result);
@@ -309,14 +309,14 @@ bool test_erase_write(struct chan_out *chan, uint8_t addr, bool first, uint8_t a
     return true;
 }
 
-bool test_read_modified(struct chan_out *chan, uint8_t addr, uint8_t *aid)
+bool test_read_modified(struct chan_out *out, uint8_t addr, uint8_t *aid)
 {
     printf("READ MODIFIED...");
 
     uint8_t buf[64];
     uint8_t status;
 
-    ssize_t result = chan_exec(chan, addr, 0x06 /* READ MODIFIED */, 0, buf, 64, &status);
+    ssize_t result = chan_exec(out, addr, 0x06 /* READ MODIFIED */, 0, buf, 64, &status);
 
     if (result < 0) {
         printf(" FAIL: result = %zd\n", result);

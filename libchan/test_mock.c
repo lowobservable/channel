@@ -15,19 +15,19 @@
 #include "chan.h"
 #include "mock_cu.h"
 
-bool test_unsolicited_status_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu);
-bool test_unsolicited_status_device_enabled(struct chan_out *chan, struct mock_cu *mock_cu);
-bool test_exec_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu);
-bool test_exec_device_not_operational(struct chan_out *chan, struct mock_cu *mock_cu);
-bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu);
-bool test_exec_device_busy(struct chan_out *chan, struct mock_cu *mock_cu);
-bool test_exec_reserved_command(struct chan_out *chan, struct mock_cu *mock_cu);
-bool test_exec_immediate_command(struct chan_out *chan, struct mock_cu *mock_cu);
-bool test_exec_read_command(char *case_name, struct chan_out *chan, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
-bool test_exec_write_command(char *case_name, struct chan_out *chan, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
+static bool test_unsolicited_status_device_disabled(struct chan_out *out, struct mock_cu *mock_cu);
+static bool test_unsolicited_status_device_enabled(struct chan_out *out, struct mock_cu *mock_cu);
+static bool test_exec_device_disabled(struct chan_out *out, struct mock_cu *mock_cu);
+static bool test_exec_device_not_operational(struct chan_out *out, struct mock_cu *mock_cu);
+static bool test_exec_status_pending(struct chan_out *out, struct mock_cu *mock_cu);
+static bool test_exec_device_busy(struct chan_out *out, struct mock_cu *mock_cu);
+static bool test_exec_reserved_command(struct chan_out *out, struct mock_cu *mock_cu);
+static bool test_exec_immediate_command(struct chan_out *out, struct mock_cu *mock_cu);
+static bool test_exec_read_command(char *case_name, struct chan_out *out, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
+static bool test_exec_write_command(char *case_name, struct chan_out *out, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
 
-void buf_arrange(uint8_t *buf, size_t count);
-bool buf_assert(uint8_t *buf, size_t count);
+static void buf_arrange(uint8_t *buf, size_t count);
+static bool buf_assert(uint8_t *buf, size_t count);
 
 int main(void)
 {
@@ -38,46 +38,46 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    struct chan_out chan;
+    struct chan_out out;
 
-    if (chan_out_open(&chan, 0x40000000, mem_fd, "udmabuf0", false) < 0) {
+    if (chan_out_open(&out, mem_fd, "udmabuf0", false) < 0) {
         perror("chan_open");
         return EXIT_FAILURE;
     }
 
     struct mock_cu mock_cu;
 
-    if (mock_cu_open(&mock_cu, 0x40001000, mem_fd) < 0) {
+    if (mock_cu_open(&mock_cu, mem_fd) < 0) {
         perror("mock_cu_open");
         return EXIT_FAILURE;
     }
 
     printf("READY\n");
 
-    test_unsolicited_status_device_disabled(&chan, &mock_cu);
-    test_unsolicited_status_device_enabled(&chan, &mock_cu);
-    test_exec_device_disabled(&chan, &mock_cu);
-    test_exec_device_not_operational(&chan, &mock_cu);
-    test_exec_status_pending(&chan, &mock_cu);
-    test_exec_device_busy(&chan, &mock_cu);
-    test_exec_reserved_command(&chan, &mock_cu);
-    test_exec_immediate_command(&chan, &mock_cu);
-    test_exec_read_command("channel_stop", &chan, 6, &mock_cu, 16, 6);
-    test_exec_read_command("cu_stop", &chan, 16, &mock_cu, 6, 6);
-    test_exec_write_command("channel_stop", &chan, 6, &mock_cu, 16, 6);
-    test_exec_write_command("cu_stop", &chan, 16, &mock_cu, 6, 6);
-    test_exec_read_command("big", &chan, 512, &mock_cu, 512, 512);
+    test_unsolicited_status_device_disabled(&out, &mock_cu);
+    test_unsolicited_status_device_enabled(&out, &mock_cu);
+    test_exec_device_disabled(&out, &mock_cu);
+    test_exec_device_not_operational(&out, &mock_cu);
+    test_exec_status_pending(&out, &mock_cu);
+    test_exec_device_busy(&out, &mock_cu);
+    test_exec_reserved_command(&out, &mock_cu);
+    test_exec_immediate_command(&out, &mock_cu);
+    test_exec_read_command("channel_stop", &out, 6, &mock_cu, 16, 6);
+    test_exec_read_command("cu_stop", &out, 16, &mock_cu, 6, 6);
+    test_exec_write_command("channel_stop", &out, 6, &mock_cu, 16, 6);
+    test_exec_write_command("cu_stop", &out, 16, &mock_cu, 6, 6);
+    test_exec_read_command("big", &out, 512, &mock_cu, 512, 512);
 
     mock_cu_close(&mock_cu);
 
-    chan_out_close(&chan);
+    chan_out_close(&out);
 
     close(mem_fd);
 
     return EXIT_SUCCESS;
 }
 
-bool test_unsolicited_status_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_unsolicited_status_device_disabled(struct chan_out *out, struct mock_cu *mock_cu)
 {
     printf("TEST: test_unsolicited_status_device_disabled\n");
 
@@ -85,14 +85,14 @@ bool test_unsolicited_status_device_disabled(struct chan_out *chan, struct mock_
     mock_cu_arrange(mock_cu, false, false, false, 0);
     mock_cu_arrange(mock_cu, false, false, true, 0);
 
-    chan_out_config(chan, 0xff, false);
-    chan_out_enable(chan);
+    chan_out_config(out, 0xff, false);
+    chan_out_enable(out);
 
     int attempt;
     bool status_stacked = false;
 
     for (attempt = 1; attempt <= 5; attempt++) {
-        if (chan->regs[5] & 0x00004000) {
+        if (out->regs[5] & 0x00004000) {
             status_stacked = true;
             break;
         }
@@ -106,13 +106,13 @@ bool test_unsolicited_status_device_disabled(struct chan_out *chan, struct mock_
     }
 
     // Enable the device.
-    chan_out_config(chan, 0xff, true);
+    chan_out_config(out, 0xff, true);
 
     bool status_pending = false;
     uint8_t status;
 
     for (attempt = 1; attempt <= 5; attempt++) {
-        int result = chan_out_test(chan, 0xff, &status);
+        int result = chan_out_test(out, 0xff, &status);
 
         if (result == 1) {
             status_pending = true;
@@ -137,7 +137,7 @@ bool test_unsolicited_status_device_disabled(struct chan_out *chan, struct mock_
         return false;
     }
 
-    if (chan_out_test(chan, 0xff, NULL) != 0) {
+    if (chan_out_test(out, 0xff, NULL) != 0) {
         printf("FAIL: expected no status pending\n");
         return false;
     }
@@ -147,7 +147,7 @@ bool test_unsolicited_status_device_disabled(struct chan_out *chan, struct mock_
     return true;
 }
 
-bool test_unsolicited_status_device_enabled(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_unsolicited_status_device_enabled(struct chan_out *out, struct mock_cu *mock_cu)
 {
     printf("TEST: test_unsolicited_status_device_enabled\n");
 
@@ -155,15 +155,15 @@ bool test_unsolicited_status_device_enabled(struct chan_out *chan, struct mock_c
     mock_cu_arrange(mock_cu, false, false, false, 0);
     mock_cu_arrange(mock_cu, false, false, true, 0);
 
-    chan_out_config(chan, 0xff, true);
-    chan_out_enable(chan);
+    chan_out_config(out, 0xff, true);
+    chan_out_enable(out);
 
     int attempt;
     bool status_pending = false;
     uint8_t status;
 
     for (attempt = 1; attempt <= 5; attempt++) {
-        int result = chan_out_test(chan, 0xff, &status);
+        int result = chan_out_test(out, 0xff, &status);
 
         if (result == 1) {
             status_pending = true;
@@ -188,7 +188,7 @@ bool test_unsolicited_status_device_enabled(struct chan_out *chan, struct mock_c
         return false;
     }
 
-    if (chan_out_test(chan, 0xff, NULL) != 0) {
+    if (chan_out_test(out, 0xff, NULL) != 0) {
         printf("FAIL: expected no status pending\n");
         return false;
     }
@@ -198,16 +198,16 @@ bool test_unsolicited_status_device_enabled(struct chan_out *chan, struct mock_c
     return true;
 }
 
-bool test_exec_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_exec_device_disabled(struct chan_out *out, struct mock_cu *mock_cu)
 {
     printf("TEST: test_exec_device_disabled\n");
 
     mock_cu_arrange(mock_cu, false, false, false, 0);
 
-    chan_out_enable(chan);
-    chan_out_config(chan, 0xff, false);
+    chan_out_enable(out);
+    chan_out_config(out, 0xff, false);
 
-    ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
+    ssize_t result = chan_exec(out, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
 
     if (result != CHAN_ERR_DEVICE_STATE) {
         printf("FAIL: expected device state error: %zd\n", result);
@@ -219,16 +219,16 @@ bool test_exec_device_disabled(struct chan_out *chan, struct mock_cu *mock_cu)
     return true;
 }
 
-bool test_exec_device_not_operational(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_exec_device_not_operational(struct chan_out *out, struct mock_cu *mock_cu)
 {
     printf("TEST: test_exec_device_not_operational\n");
 
     mock_cu_arrange(mock_cu, false, false, false, 0);
 
-    chan_out_enable(chan);
-    chan_out_config(chan, 0x1b, true);
+    chan_out_enable(out);
+    chan_out_config(out, 0x1b, true);
 
-    ssize_t result = chan_exec(chan, 0x1b, CHAN_CMD_NOP, 0, NULL, 0, NULL);
+    ssize_t result = chan_exec(out, 0x1b, CHAN_CMD_NOP, 0, NULL, 0, NULL);
 
     if (result != CHAN_ERR_DEVICE_NOTOP) {
         printf("FAIL: expected device not operational error: %zd\n", result);
@@ -240,7 +240,7 @@ bool test_exec_device_not_operational(struct chan_out *chan, struct mock_cu *moc
     return true;
 }
 
-bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_exec_status_pending(struct chan_out *out, struct mock_cu *mock_cu)
 {
     printf("TEST: test_exec_status_pending\n");
 
@@ -248,14 +248,14 @@ bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu)
     mock_cu_arrange(mock_cu, false, false, false, 0);
     mock_cu_arrange(mock_cu, false, false, true, 0);
 
-    chan_out_config(chan, 0xff, true);
-    chan_out_enable(chan);
+    chan_out_config(out, 0xff, true);
+    chan_out_enable(out);
 
     int attempt;
     bool status_pending = false;
 
     for (attempt = 1; attempt <= 5; attempt++) {
-        if (chan->regs[5] & 0x00008000) {
+        if (out->regs[5] & 0x00008000) {
             status_pending = true;
             break;
         }
@@ -268,30 +268,30 @@ bool test_exec_status_pending(struct chan_out *chan, struct mock_cu *mock_cu)
         return false;
     }
 
-    ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
+    ssize_t result = chan_exec(out, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
 
     if (result != CHAN_ERR_STATUS_PENDING) {
         printf("FAIL: expected status pending error: %zd\n", result);
         return false;
     }
 
-    chan_out_test(chan, 0xff, NULL);
+    chan_out_test(out, 0xff, NULL);
 
     printf("PASS\n");
 
     return true;
 }
 
-bool test_exec_device_busy(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_exec_device_busy(struct chan_out *out, struct mock_cu *mock_cu)
 {
     printf("TEST: test_exec_device_busy\n");
 
     mock_cu_arrange(mock_cu, true, false, false, 0);
 
-    chan_out_enable(chan);
-    chan_out_config(chan, 0xff, true);
+    chan_out_enable(out);
+    chan_out_config(out, 0xff, true);
 
-    ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
+    ssize_t result = chan_exec(out, 0xff, CHAN_CMD_NOP, 0, NULL, 0, NULL);
 
     if (result != CHAN_ERR_DEVICE_BUSY) {
         printf("FAIL: expected device busy error: %zd\n", result);
@@ -303,16 +303,16 @@ bool test_exec_device_busy(struct chan_out *chan, struct mock_cu *mock_cu)
     return true;
 }
 
-bool test_exec_reserved_command(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_exec_reserved_command(struct chan_out *out, struct mock_cu *mock_cu)
 {
     printf("TEST: test_exec_reserved_command\n");
 
     mock_cu_arrange(mock_cu, false, false, false, 0);
 
-    chan_out_enable(chan);
-    chan_out_config(chan, 0xff, true);
+    chan_out_enable(out);
+    chan_out_config(out, 0xff, true);
 
-    ssize_t result = chan_exec(chan, 0xff, 0x00, 0, NULL, 0, NULL);
+    ssize_t result = chan_exec(out, 0xff, 0x00, 0, NULL, 0, NULL);
 
     if (result != CHAN_ERR_CMD_RESERVED) {
         printf("FAIL: expected reserved command error: %zd\n", result);
@@ -324,18 +324,18 @@ bool test_exec_reserved_command(struct chan_out *chan, struct mock_cu *mock_cu)
     return true;
 }
 
-bool test_exec_immediate_command(struct chan_out *chan, struct mock_cu *mock_cu)
+bool test_exec_immediate_command(struct chan_out *out, struct mock_cu *mock_cu)
 {
     printf("TEST: test_exec_immediate_command\n");
 
     mock_cu_arrange(mock_cu, false, false, false, 0);
 
-    chan_out_enable(chan);
-    chan_out_config(chan, 0xff, true);
+    chan_out_enable(out);
+    chan_out_config(out, 0xff, true);
 
     uint8_t status;
 
-    ssize_t result = chan_exec(chan, 0xff, CHAN_CMD_NOP, 0, NULL, 0, &status);
+    ssize_t result = chan_exec(out, 0xff, CHAN_CMD_NOP, 0, NULL, 0, &status);
 
     if (result != 0) {
         printf("FAIL: expected successful count 0 bytes: %zd\n", result);
@@ -352,23 +352,23 @@ bool test_exec_immediate_command(struct chan_out *chan, struct mock_cu *mock_cu)
     return true;
 }
 
-bool test_exec_read_command(char *case_name, struct chan_out *chan, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
+bool test_exec_read_command(char *case_name, struct chan_out *out, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
 {
     printf("TEST: test_exec_read_command_%s\n", case_name);
 
-    udmabuf_clear(&chan->udmabuf, 0);
+    udmabuf_clear(&out->udmabuf, 0);
 
     mock_cu_arrange(mock_cu, false, false, false, mock_cu_limit);
 
-    chan_out_enable(chan);
-    chan_out_config(chan, 0xff, true);
+    chan_out_enable(out);
+    chan_out_config(out, 0xff, true);
 
     uint8_t cmd = 0x02; // READ
 
     uint8_t buf[1024];
     uint8_t status;
 
-    ssize_t result = chan_exec(chan, 0xff, cmd, 0, buf, count, &status);
+    ssize_t result = chan_exec(out, 0xff, cmd, 0, buf, count, &status);
 
     if (result != expected_count) {
         printf("FAIL: expected successful count %d bytes: %zd\n", expected_count, result);
@@ -391,16 +391,16 @@ bool test_exec_read_command(char *case_name, struct chan_out *chan, uint16_t cou
     return true;
 }
 
-bool test_exec_write_command(char *case_name, struct chan_out *chan, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
+bool test_exec_write_command(char *case_name, struct chan_out *out, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count)
 {
     printf("TEST: test_exec_write_command_%s\n", case_name);
 
-    udmabuf_clear(&chan->udmabuf, 0);
+    udmabuf_clear(&out->udmabuf, 0);
 
     mock_cu_arrange(mock_cu, false, false, false, mock_cu_limit);
 
-    chan_out_enable(chan);
-    chan_out_config(chan, 0xff, true);
+    chan_out_enable(out);
+    chan_out_config(out, 0xff, true);
 
     uint8_t cmd = 0x01; // WRITE
 
@@ -409,7 +409,7 @@ bool test_exec_write_command(char *case_name, struct chan_out *chan, uint16_t co
 
     buf_arrange(buf, count);
 
-    ssize_t result = chan_exec(chan, 0xff, cmd, 0, buf, count, &status);
+    ssize_t result = chan_exec(out, 0xff, cmd, 0, buf, count, &status);
 
     if (result != expected_count) {
         printf("FAIL: expected successful count %d bytes: %zd\n", expected_count, result);

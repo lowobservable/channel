@@ -39,7 +39,7 @@ struct wrap_test_case wrap_test_cases[] = {
     { 0x00000, "NONE", "NONE" }
 };
 
-bool wrap_test(struct chan_out *chan);
+static bool wrap_test(struct chan_out *out);
 
 int main(int argc, char **argv)
 {
@@ -50,37 +50,37 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    struct chan_out chan;
+    struct chan_out out;
 
-    if (chan_out_open(&chan, 0x40000000, mem_fd, "udmabuf0", true) < 0) {
+    if (chan_out_open(&out, mem_fd, "udmabuf0", true) < 0) {
         perror("chan_open");
         return EXIT_FAILURE;
     }
 
-    chan_out_disable(&chan);
+    chan_out_disable(&out);
 
-    bool result = wrap_test(&chan);
+    bool success = wrap_test(&out);
 
-    chan_out_close(&chan);
+    chan_out_close(&out);
 
     close(mem_fd);
 
-    return (result ? EXIT_SUCCESS : EXIT_FAILURE);
+    return (success ? EXIT_SUCCESS : EXIT_FAILURE);
 }
 
-bool wrap_test(struct chan_out *chan)
+bool wrap_test(struct chan_out *out)
 {
     printf("Driver          | Receiver        | Result\n");
     printf("--------------- | --------------- | ------\n");
 
-    bool result = true;
+    bool success = true;
 
     size_t len = sizeof(wrap_test_cases) / sizeof(struct wrap_test_case);
 
     for (size_t index = 0; index < len; index++) {
         struct wrap_test_case *test_case = &wrap_test_cases[index];
 
-        int result = chan_out_wrap_test(chan, test_case->driver, NULL);
+        int result = chan_out_wrap_test(out, test_case->driver, NULL);
 
         if (result < 0) {
             printf("Wrap test error, channel may be enabled.\n");
@@ -92,9 +92,9 @@ bool wrap_test(struct chan_out *chan)
         } else {
             printf("%-15s | %-15s | FAIL\n", test_case->driver_name, test_case->receiver_name);
 
-            result = false;
+            success = false;
         }
     }
 
-    return result;
+    return success;
 }

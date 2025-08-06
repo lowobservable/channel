@@ -11,9 +11,9 @@
 #define REG_CONTROL 0
 #define REG_STATUS 1
 
-int mock_cu_open(struct mock_cu *mock_cu, uintptr_t base_addr, int mem_fd)
+int mock_cu_open(struct mock_cu *mock_cu, int mem_fd)
 {
-    mock_cu->base_addr = base_addr;
+    mock_cu->base_addr = 0x40001000;
 
     if ((mock_cu->base = real_map(mock_cu->base_addr, REGS_SIZE, mem_fd)) == NULL) {
         return -1;

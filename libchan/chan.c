@@ -5,19 +5,13 @@
 
 #include "chan.h"
 
-ssize_t chan_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flags, void *buf, size_t count, uint8_t *status)
+ssize_t chan_exec(struct chan_out *out, uint8_t addr, uint8_t cmd, uint8_t flags, void *buf, size_t count, uint8_t *status)
 {
-    if (chan == NULL) {
+    if (out == NULL) {
         return CHAN_ERR_ARGS;
     }
 
-    int result = (int) chan_out_prepare(chan, cmd, buf, count);
-
-    if (result < 0) {
-        return result;
-    }
-
-    result = chan_out_start(chan, addr, cmd, flags, count);
+    int result = chan_out_start(out, addr, cmd, flags, buf, count);
 
     if (result < 0) {
         return result;
@@ -28,7 +22,7 @@ ssize_t chan_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flag
     do {
         uint8_t pending_status;
 
-        result = chan_out_test(chan, addr, &pending_status);
+        result = chan_out_test(out, addr, &pending_status);
 
         if (result < 0) {
             return result;
@@ -48,10 +42,10 @@ ssize_t chan_exec(struct chan_out *chan, uint8_t addr, uint8_t cmd, uint8_t flag
 
     // TODO: check status... for UC?
 
-    return chan_out_complete(chan, cmd, buf, count);
+    return chan_out_complete(out, cmd, buf, count);
 }
 
-ssize_t chan_exec_basic_sense(struct chan_out *chan, uint8_t addr, void *buf, size_t count, uint8_t *status)
+ssize_t chan_exec_basic_sense(struct chan_out *out, uint8_t addr, void *buf, size_t count, uint8_t *status)
 {
     if (buf == NULL) {
         return CHAN_ERR_ARGS;
@@ -61,10 +55,10 @@ ssize_t chan_exec_basic_sense(struct chan_out *chan, uint8_t addr, void *buf, si
         return CHAN_ERR_ARGS;
     }
 
-    return chan_exec(chan, addr, CHAN_CMD_BASIC_SENSE, 0, buf, count, status);
+    return chan_exec(out, addr, CHAN_CMD_BASIC_SENSE, 0, buf, count, status);
 }
 
-ssize_t chan_exec_sense_id(struct chan_out *chan, uint8_t addr, void *buf, size_t count, uint8_t *status)
+ssize_t chan_exec_sense_id(struct chan_out *out, uint8_t addr, void *buf, size_t count, uint8_t *status)
 {
     if (buf == NULL) {
         return CHAN_ERR_ARGS;
@@ -74,7 +68,7 @@ ssize_t chan_exec_sense_id(struct chan_out *chan, uint8_t addr, void *buf, size_
         return CHAN_ERR_ARGS;
     }
 
-    ssize_t result = chan_exec(chan, addr, CHAN_CMD_SENSE_ID, 0, buf, count, status);
+    ssize_t result = chan_exec(out, addr, CHAN_CMD_SENSE_ID, 0, buf, count, status);
 
     if (result < 0) {
         return result;
@@ -93,9 +87,9 @@ ssize_t chan_exec_sense_id(struct chan_out *chan, uint8_t addr, void *buf, size_
     return result;
 }
 
-int chan_exec_nop(struct chan_out *chan, uint8_t addr, uint8_t *status)
+int chan_exec_nop(struct chan_out *out, uint8_t addr, uint8_t *status)
 {
-    ssize_t result = chan_exec(chan, addr, CHAN_CMD_NOP, 0, NULL, 0, status);
+    ssize_t result = chan_exec(out, addr, CHAN_CMD_NOP, 0, NULL, 0, status);
 
     if (result < 0) {
         return result;

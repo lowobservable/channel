@@ -4,34 +4,92 @@
 
 #include <stdio.h>
 #include <stdbool.h>
-#include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
-#include <unistd.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
+#include <sys/param.h>
 #include <netinet/in.h>
-#include <errno.h>
 #include <assert.h>
 
 #include <real.h>
 #include <chan.h>
 #include <mock_cu.h>
 
-#define MSG_BUF_SIZE 16000
+#define MSG_TYPE_ACK 0x00
+#define MSG_TYPE_PING 0x01
+#define MSG_TYPE_OPEN 0x02
+#define MSG_TYPE_CLOSE 0x03
+#define MSG_TYPE_START 0x04
+#define MSG_TYPE_STATUS 0x05
+#define MSG_TYPE_DATA 0x06
+#define MSG_TYPE_ERROR 0xff
 
-#define ADDR 0x60
+struct chan {
+    struct chan_out out;
+    uint8_t *recv_buf; // Client message buffer is used when sending data to the device
+    bool solicited;
+    uint8_t cmd;
+    size_t count;
+};
 
-uint8_t xxx_buf[MSG_BUF_SIZE];
-size_t xxx_buf_len = 0;
+#define MSG_BUF_SIZE(D) (MAX((D) + 32, 1024))
 
-bool serve(int listen_sock, struct chan_out *chan);
-void handle_client(int sock, struct chan_out *chan);
-void handle_message(int sock, struct chan_out *chan, uint8_t *msg, size_t msg_len);
-void send_status(int sock, struct chan_out *chan, uint8_t addr, uint8_t device_status);
-void purge_status(struct chan_out *chan, uint8_t addr);
+struct client {
+    int sock;
+    uint8_t *msg_buf;
+    size_t msg_buf_size;
+    size_t msg_buf_len;
+    uint8_t *msg;
+    size_t msg_len;
+    int dev_addr;
+};
+
+static bool serve(int listen_sock, struct chan *chan);
+
+static bool handle_connect(struct client *client, struct chan *chan);
+static bool handle_disconnect(struct client *client, struct chan *chan);
+static bool handle_msg(struct client *client, uint8_t *msg, size_t len, struct chan *chan);
+static bool handle_start_msg(struct client *client, uint8_t *msg, size_t len, struct chan *chan);
+static bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_addr, uint8_t status);
+
+static bool init_client(struct client *client, struct chan *chan);
+static bool close_client(struct client *client, struct chan *chan);
+static bool recv_all(struct client *client);
+static ssize_t get_msg(struct client *client, uint8_t **msg);
+static bool send_msg(struct client *client, void *msg, size_t len);
+static bool send_ack_msg(struct client *client);
+static bool send_error_msg(struct client *client, uint8_t num, char *text);
+static bool send_status_msg(struct client *client, uint8_t dev_addr, uint8_t status, bool solicited);
+static bool send_data_msg(struct client *client, uint8_t dev_addr, void *data, size_t count);
 
 int main(int argc, char **argv)
 {
+    int port = 3174;
+    bool frontend_enable = true;
+    bool mock_enable = false;
+
+    int opt;
+
+    while ((opt = getopt(argc, argv, "lm")) != -1) {
+        switch (opt) {
+            case 'l':
+                frontend_enable = false;
+                break;
+
+            case 'm':
+                mock_enable = true;
+                break;
+
+            default:
+                printf("Usage: %s [-lm]\n", argv[0]);
+                return EXIT_FAILURE;
+        }
+    }
+
     int mem_fd;
 
     if ((mem_fd = mem_open()) < 0) {
@@ -52,7 +110,7 @@ int main(int argc, char **argv)
 
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(3174);
+    addr.sin_port = htons(port);
 
     if (bind(listen_sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
         perror("bind");
@@ -64,48 +122,75 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    bool frontend_enable = true;
-
-    if (argc > 1 && strcmp(argv[1], "-l") == 0) {
-        frontend_enable = false;
+    if (frontend_enable && mock_enable) {
+        printf("WARN: Mock CU and physical interface enabled\n");
+    } else if (!frontend_enable && !mock_enable) {
+        printf("WARN: Loopback with no mock CU, no CUs available\n");
+    } else if (!frontend_enable) {
+        printf("WARN: Physical interface not enabled, acting as loopback\n");
     }
 
-    if (!frontend_enable) {
-        printf("WARN: External interface not enabled, acting as loopback\n");
-    }
+    struct chan chan;
 
-    struct chan_out chan;
+    int result = chan_out_open(&chan.out, mem_fd, "udmabuf0", frontend_enable);
 
-    if (chan_out_open(&chan, 0x40000000, mem_fd, "udmabuf0", frontend_enable) < 0) {
+    if (result == -1) {
         perror("chan_open");
+        return EXIT_FAILURE;
+    } else if (result < -1) {
+        printf("chan_open error: %d\n", result);
         return EXIT_FAILURE;
     }
 
-    chan_out_enable(&chan);
+    if ((chan.recv_buf = malloc(chan.out.udmabuf.size)) == NULL) {
+        perror("malloc");
+        return EXIT_FAILURE;
+    }
+
+    chan_out_enable(&chan.out);
 
     struct mock_cu mock_cu;
 
-    if (mock_cu_open(&mock_cu, 0x40001000, mem_fd) < 0) {
-        perror("mock_cu_open");
-        return EXIT_FAILURE;
+    if (mock_enable) {
+        result = mock_cu_open(&mock_cu, mem_fd);
+
+        if (result == -1) {
+            perror("mock_cu_open");
+            return EXIT_FAILURE;
+        } else if (result < -1) {
+            printf("mock_cu_open error: %d\n", result);
+            return EXIT_FAILURE;
+        }
+
+        mock_cu_arrange(&mock_cu, false, false, false, 16);
     }
 
-    mock_cu_arrange(&mock_cu, false, false, false, 16);
+    bool success = serve(listen_sock, &chan);
 
-    if (!serve(listen_sock, &chan)) {
-        return EXIT_FAILURE;
+    if (mock_enable) {
+        mock_cu_close(&mock_cu);
     }
 
-    mock_cu_close(&mock_cu);
-    chan_out_close(&chan);
+    chan_out_close(&chan.out);
+
+    free(chan.recv_buf);
 
     close(listen_sock);
     close(mem_fd);
 
-    return EXIT_SUCCESS;
+    return (success ? EXIT_SUCCESS : EXIT_FAILURE);
 }
 
-bool serve(int listen_sock, struct chan_out *chan)
+volatile bool stop = false;
+
+static void signal_handler(int signum)
+{
+    if (signum == SIGINT) {
+        stop = true;
+    }
+}
+
+bool serve(int listen_sock, struct chan *chan)
 {
     int epfd;
 
@@ -124,14 +209,20 @@ bool serve(int listen_sock, struct chan_out *chan)
         return false;
     }
 
-    printf("READY\n");
+    printf("Listening...\n");
 
-    int client_sock = -1;
+    struct client client;
 
-    while (true) {
+    if (!init_client(&client, chan)) {
+        return false;
+    }
+
+    signal(SIGINT, signal_handler);
+
+    while (!stop) {
         struct epoll_event event;
 
-		int count = epoll_wait(epfd, &event, 1, 250);
+        int count = epoll_wait(epfd, &event, 1, 100); // 100 ms
 
         if (count > 0) {
             if (event.data.fd == listen_sock) {
@@ -142,86 +233,331 @@ bool serve(int listen_sock, struct chan_out *chan)
                     return false;
                 }
 
-                if (client_sock == -1) {
-                    client_sock = sock;
-
-                    xxx_buf_len = 0; // Reset, for new client...
-
-                    printf("CONNECTED\n");
-
-                    chan_out_config(chan, ADDR /* TODO */, true);
-purge_status(chan, ADDR);
-
-                    ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP;
-                    ev.data.fd = client_sock;
-
-                    if (epoll_ctl(epfd, EPOLL_CTL_ADD, client_sock, &ev) < 0) {
-                        perror("epoll_ctl");
-                        return false;
-                    }
-
-                    printf("READY\n");
-
-                    //test_and_send_status(client_sock, chan, ADDR /* TODO */);
-                } else {
-                    printf("CONNECTION REJECTED\n");
+                if (client.sock != -1) {
+                    printf("Connection rejected due to active client\n");
 
                     close(sock);
+                    continue;
+                }
+
+                client.sock = sock;
+
+                ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP;
+                ev.data.fd = client.sock;
+
+                if (epoll_ctl(epfd, EPOLL_CTL_ADD, client.sock, &ev) < 0) {
+                    perror("epoll_ctl");
+                    return false;
+                }
+
+                if (!handle_connect(&client, chan)) {
+                    return false;
                 }
             } else if (event.events & EPOLLIN) {
-                assert(event.data.fd == client_sock);
+                assert(event.data.fd == client.sock);
 
-                handle_client(client_sock, chan);
+                if (!recv_all(&client)) {
+                    if (!close_client(&client, chan)) {
+                        return false;
+                    }
+                }
             }
 
             if (event.events & (EPOLLRDHUP | EPOLLHUP)) {
-                assert(event.data.fd == client_sock);
+                assert(event.data.fd == client.sock);
 
-                chan_out_config(chan, ADDR /* TODO */, false);
+                if (!handle_disconnect(&client, chan)) {
+                    return false;
+                }
 
-				epoll_ctl(epfd, EPOLL_CTL_DEL, client_sock, NULL);
-
-				close(client_sock);
-
-                client_sock = -1;
-
-                printf("DISCONNECTED\n");
-			}
+                if (!close_client(&client, chan)) {
+                    return false;
+                }
+            }
         }
 
-        // Check for unsolicited status.
-        if (client_sock != -1) {
-            uint8_t device_status;
+        if (client.sock != -1) {
+            uint8_t *buf;
 
-            int result = chan_out_test(chan, ADDR /* TODO */, &device_status);
+            ssize_t msg_result = get_msg(&client, &buf);
 
-            if (result < 0) {
-                printf("chan_out_test error: %d\n", result);
+            if (msg_result < 0) {
+                if (!close_client(&client, chan)) {
+                    return false;
+                }
+            }
+
+            if (msg_result > 0) {
+                if (!handle_msg(&client, buf, msg_result, chan)) {
+                    return false;
+                }
+            }
+        }
+
+        if (client.sock != -1 && client.dev_addr != -1) {
+            uint8_t status;
+
+            int test_result = chan_out_test(&chan->out, client.dev_addr, &status);
+
+            if (test_result < 0) {
+                printf("chan_out_test error: %d\n", test_result);
                 return false;
             }
 
-            if (result) {
-                printf("Unsolicited status: 0x%.2x\n", device_status);
-
-                send_status(client_sock, chan, ADDR /* TODO */, device_status);
+            if (test_result) {
+                if (!handle_dev_status(&client, chan, client.dev_addr, status)) {
+                    return false;
+                }
             }
         }
+    }
+
+    signal(SIGINT, SIG_DFL);
+
+    if (stop) {
+        printf("\nStopped\n");
+    }
+
+    close(epfd);
+
+    return true;
+}
+
+bool handle_connect(struct client *client, struct chan *chan)
+{
+    printf("Client connected\n");
+
+    return true;
+}
+
+bool handle_disconnect(struct client *client, struct chan *chan)
+{
+    printf("Client disconnected\n");
+
+    if (client->dev_addr != -1) {
+        chan_out_config(&chan->out, client->dev_addr, false);
+
+        client->dev_addr = -1;
     }
 
     return true;
 }
 
-void handle_client(int sock, struct chan_out *chan)
+bool handle_msg(struct client *client, uint8_t *msg, size_t len, struct chan *chan)
 {
-    // First, read as much as we can into the buffer.
-    uint8_t *buf_p = xxx_buf + xxx_buf_len;
+    if (len < 1) {
+        printf("ERROR: Invalid message length: %zu\n", len);
+        return close_client(client, chan);
+    }
 
-    size_t buf_remaining = MSG_BUF_SIZE - xxx_buf_len;
+    uint8_t msg_type = msg[0];
 
-    //printf("before reads, buf_len = %zu, buf_remaining = %zu\n", xxx_buf_len, buf_remaining);
+    if (msg_type == MSG_TYPE_PING) {
+        printf("Ping\n");
 
-    while (buf_remaining > 0) {
-        ssize_t result = read(sock, buf_p, buf_remaining);
+        if (len != 1) {
+            printf("ERROR: Invalid message length: %zu\n", len);
+            return close_client(client, chan);
+        }
+
+        return send_ack_msg(client);
+    } else if (msg_type == MSG_TYPE_OPEN) {
+        printf("Open\n");
+
+        if (len != 2) {
+            printf("ERROR: Invalid message length: %zu\n", len);
+            return close_client(client, chan);
+        }
+
+        uint8_t dev_addr = msg[1];
+
+        printf("\tAddr = %.2x\n", dev_addr);
+
+        if (client->dev_addr == dev_addr) {
+            printf("\tWarn: Already open\n");
+            return send_error_msg(client, 0, "Device already open");
+        }
+
+        chan_out_config(&chan->out, dev_addr, true);
+
+        client->dev_addr = dev_addr;
+
+        return send_ack_msg(client);
+    } else if (msg_type == MSG_TYPE_CLOSE) {
+        printf("Close\n");
+
+        if (len != 2) {
+            printf("ERROR: Invalid message length: %zu\n", len);
+            return close_client(client, chan);
+        }
+
+        uint8_t dev_addr = msg[1];
+
+        printf("\tAddr = %.2x\n", dev_addr);
+
+        if (client->dev_addr != dev_addr) {
+            printf("\tWarn: Not open\n");
+            return send_error_msg(client, 0, "Device not open");
+        }
+
+        chan_out_config(&chan->out, dev_addr, false);
+
+        client->dev_addr = -1;
+
+        return send_ack_msg(client);
+    } else if (msg_type == MSG_TYPE_START) {
+        return handle_start_msg(client, msg, len, chan);
+    } else {
+        printf("ERROR: Unsupported message type: %d\n", msg_type);
+        return close_client(client, chan);
+    }
+
+    return true;
+}
+
+bool handle_start_msg(struct client *client, uint8_t *msg, size_t len, struct chan *chan)
+{
+    printf("Start\n");
+
+    if (len < 4) {
+        printf("\tERROR: Invalid message length: %zu\n", len);
+        return close_client(client, chan);
+    }
+
+    uint8_t dev_addr = msg[1];
+
+    printf("\tAddr = %.2x\n", dev_addr);
+
+    if (client->dev_addr != dev_addr) {
+        printf("\tWarn: Not open\n");
+        return send_error_msg(client, 0, "Device not open");
+    }
+
+    uint8_t cmd = msg[2];
+    uint8_t flags = msg[3];
+
+    // Determine if the command will result in data being sent to the device.
+    bool is_send_cmd = cmd & 0x01;
+
+    void *data;
+    size_t count;
+
+    if (is_send_cmd) {
+        data = &msg[4];
+        count = len - 4;
+    } else {
+        if (len < 6) {
+            printf("\tERROR: Invalid message length: %zu\n", len);
+            return close_client(client, chan);
+        }
+
+        data = chan->recv_buf;
+        count = (msg[4] << 8) | msg[5];
+    }
+
+    printf("\tCmd = %.2x, Flags = %.2x, Count = %zu\n", cmd, flags, count);
+
+    int start_result = chan_out_start(&chan->out, dev_addr, cmd, flags, data, count);
+
+    if (start_result == -1) {
+        printf("chan_out_start error: %d\n", start_result);
+        return false;
+    } else if (start_result < -1) {
+        printf("\tError = %d\n", start_result);
+        return send_error_msg(client, start_result * (-1), "Start error");
+    }
+
+    chan->solicited = true;
+    chan->cmd = cmd;
+    chan->count = count;
+
+    return true;
+}
+
+bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_addr, uint8_t status)
+{
+    printf("Status\n");
+    printf("\tAddr = %.2x, Status = %.2x\n", dev_addr, status);
+
+    bool solicited = chan->solicited;
+    bool is_send_cmd = chan->cmd & 0x01;
+
+    if (solicited && (status & CHAN_STATUS_CE)) {
+        ssize_t result = chan_out_complete(&chan->out, chan->cmd, chan->recv_buf, chan->count);
+
+        if (result < 0) {
+            printf("chan_out_complete error: %zd\n", result);
+            return false;
+        }
+
+        if (chan->count > 0) {
+            if (is_send_cmd) {
+                send_data_msg(client, dev_addr, NULL, result);
+            } else {
+                send_data_msg(client, dev_addr, chan->recv_buf, result);
+            }
+        }
+    }
+
+    if (solicited && (status & CHAN_STATUS_DE)) {
+        chan->solicited = false;
+    }
+
+    return send_status_msg(client, dev_addr, status, solicited);
+}
+
+bool init_client(struct client *client, struct chan *chan)
+{
+    client->sock = -1;
+
+    client->msg_buf_size = MSG_BUF_SIZE(chan->out.udmabuf.size);
+
+    if ((client->msg_buf = malloc(client->msg_buf_size)) == NULL) {
+        perror("malloc");
+        return false;
+    }
+
+    client->msg_buf_len = 0;
+
+    client->msg = NULL;
+    client->msg_len = 0;
+
+    client->dev_addr = -1;
+
+    return true;
+}
+
+bool close_client(struct client *client, struct chan *chan)
+{
+    if (client->sock != -1) {
+        close(client->sock);
+
+        client->sock = -1;
+    }
+
+    if (client->msg_buf != NULL) {
+        free(client->msg_buf);
+
+        client->msg_buf = NULL;
+    }
+
+    if (client->dev_addr != -1) {
+        chan_out_config(&chan->out, client->dev_addr, false);
+
+        client->dev_addr = -1;
+    }
+
+    return init_client(client, chan);
+}
+
+bool recv_all(struct client *client)
+{
+    uint8_t *p = client->msg_buf + client->msg_buf_len;
+
+    size_t remaining = client->msg_buf_size - client->msg_buf_len;
+
+    while (remaining > 0) {
+        ssize_t result = read(client->sock, p, remaining);
 
         if (result == 0 || (result == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
             break;
@@ -229,223 +565,148 @@ void handle_client(int sock, struct chan_out *chan)
 
         if (result < 0) {
             perror("read");
-            break;
+            return false;
         }
 
-        size_t count = result;
-
-        //printf("read %zu bytes\n", count);
-
-        xxx_buf_len += count;
-        buf_remaining -= count;
+        client->msg_buf_len += result;
+        remaining -= result;
     }
 
-    //printf("after reads, buf_len = %zu, buf_remaining = %zu\n", xxx_buf_len, buf_remaining);
-
-    // Then, execute any complete commands.
-    buf_p = xxx_buf;
-
-    while (xxx_buf_len >= 2 /* the minimum message length */) {
-        uint16_t msg_len = (buf_p[0] << 8) | buf_p[1];
-
-        //printf("msg_len = %d\n", msg_len);
-
-        // Message is not complete...
-        if (xxx_buf_len < msg_len + 2) {
-            break;
-        }
-
-        buf_p += 2;
-
-        handle_message(sock, chan, buf_p, msg_len);
-
-        buf_p += msg_len;
-        xxx_buf_len -= (2 + msg_len);
-    }
-
-    if (buf_p != xxx_buf && xxx_buf_len > 0) {
-        memmove(xxx_buf, buf_p, xxx_buf_len);
-    }
+    return true;
 }
 
-void handle_message(int sock, struct chan_out *chan, uint8_t *msg, size_t msg_len)
+ssize_t get_msg(struct client *client, uint8_t **msg)
 {
-    uint8_t buf[MSG_BUF_SIZE];
+    // Drop previous message.
+    if (client->msg != NULL) {
+        client->msg_buf_len -= 3 + client->msg_len;
 
-    if (msg_len < 1) {
-        return;
+        if (client->msg_buf_len > 0) {
+            memmove(client->msg_buf, client->msg_buf + 3 + client->msg_len, client->msg_buf_len);
+        }
+
+        client->msg = NULL;
+        client->msg_len = 0;
     }
 
-    uint8_t type = msg[0];
-
-    if (type == 1 /* PING */) {
-        printf("PING\n");
-
-        buf[0] = 0;
-        buf[1] = 1;
-
-        buf[2] = 2; // PONG
-
-        if (write(sock, buf, 3) < 3) {
-            perror("write");
-        }
-    } else if (type == 3 /* EXEC */) {
-        printf("EXEC\n");
-
-        if (msg_len < 6) {
-            printf("\tinvalid message, len = %zu\n", msg_len);
-            return;
-        }
-
-        uint8_t addr = msg[1];
-        uint8_t cmd = msg[2];
-        uint8_t flags = msg[3];
-        size_t count = (msg[4] << 8) | msg[5];
-        uint8_t *data;
-
-        bool is_write_command = cmd & 0x01;
-
-        if (is_write_command) {
-            data = &msg[6];
-        } else {
-            data = &buf[7];
-        }
-
-        printf("\taddr = %.2x, cmd = %.2x, flags = %.2x, count = %zu\n", addr, cmd, flags, count);
-
-        uint8_t device_status;
-
-        ssize_t result = chan_exec(chan, ADDR /* TODO */, cmd, 0, data, count, &device_status);
-
-        /*
-        ssize_t result;
-        uint8_t device_status;
-
-        if (cmd == 0x03) {
-            result = 0;
-            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE;
-        } else if (cmd == 0xe4) {
-            data[0] = 0xff;
-            data[1] = 0x12;
-            data[2] = 0x34;
-            data[3] = 0x56;
-            result = 4;
-            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE;
-        } else if (cmd == 0x02) {
-            int i;
-            for (i = 0; i < count; i++) {
-                data[i] = i + 1;
-            }
-            result = count;
-            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE;
-        } else if (cmd == 0x01) {
-            result = count;
-            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE;
-        } else {
-            result = 0;
-            device_status = CHAN_STATUS_CE | CHAN_STATUS_DE | CHAN_STATUS_UC;
-        }
-        */
-
-        printf("\tresult = %zd, status = %.2x\n", result, device_status);
-
-        // special hack for DE...
-        //if ((device_status & CHAN_STATUS_CE) && !(device_status & CHAN_STATUS_DE)) {
-        //    result = 0;
-        //
-        //    // wait for it via request in...
-        //    printf("\tgot CE without DE, waiting for DE via request in...\n");
-        //
-        //    while (!chan_out_request_in(chan)) {
-        //        usleep(100000); // 100ms
-        //    }
-        //
-        //    int test_result = chan_out_test(chan, ADDR /* TODO */);
-        //
-        //    if (test_result < 0) {
-        //        printf("\ttest result = %d\n", test_result);
-        //        return;
-        //    }
-        //
-        //    device_status |= chan_out_device_status(chan);
-        //
-        //    printf("\tupdated status = %.2x\n", device_status);
-        //
-        //    if (!(device_status & CHAN_STATUS_DE)) {
-        //        printf("\tstill no DE...\n");
-        //    }
-        //}
-
-        buf[2] = 4; // EXEC RESPONSE
-
-        if (result < 0) {
-            buf[3] = (-1) * result;
-
-            count = 0;
-        } else {
-            buf[3] = 0;
-
-            count = result;
-        }
-
-        buf[4] = device_status;
-        buf[5] = (count >> 8) & 0xff;
-        buf[6] = count & 0xff;
-
-        msg_len = count + 5;
-
-        buf[0] = (msg_len >> 8) & 0xff;
-        buf[1] = msg_len & 0xff;
-
-        if (write(sock, buf, msg_len + 2) < msg_len + 2) {
-            perror("write");
-        }
-
-        printf("\tdone\n");
+    // Header is incomplete...
+    if (client->msg_buf_len < 3) {
+        return 0;
     }
+
+    uint8_t version = client->msg_buf[0];
+
+    if (version != 0) {
+        printf("ERROR: Unsupported protocol version: %d\n", version);
+        return -1;
+    }
+
+    uint16_t len = (client->msg_buf[1] << 8) | client->msg_buf[2];
+
+    // Message is incomplete...
+    if (client->msg_buf_len < 3 + len) {
+        return 0;
+    }
+
+    client->msg = &client->msg_buf[3];
+    client->msg_len = len;
+
+    *msg = client->msg;
+
+    return client->msg_len;
 }
 
-void send_status(int sock, struct chan_out *chan, uint8_t addr, uint8_t device_status)
+bool send_msg(struct client *client, void *msg, size_t len)
 {
-    uint8_t buf[MSG_BUF_SIZE];
+    uint8_t buf[3];
 
     buf[0] = 0;
-    buf[1] = 3;
-    buf[2] = 5; // STATUS
-    buf[3] = addr;
-    buf[4] = device_status;
+    buf[1] = (len & 0xff00) >> 8;
+    buf[2] = len & 0x00ff;
 
-    if (write(sock, buf, 5) < 5) {
-        perror("write");
+    if (write(client->sock, &buf, 3) < 3) {
+        return false;
     }
+
+    if (write(client->sock, msg, len) < len) {
+        return false;
+    }
+
+    return true;
 }
 
-void purge_status(struct chan_out *chan, uint8_t addr)
+bool send_ack_msg(struct client *client)
 {
-    // Very hacky... this is no way to do error recovery!
-    while (true) {
-        printf("PURGE...\n");
+    uint8_t buf[1];
 
-        uint8_t status;
+    buf[0] = MSG_TYPE_ACK;
 
-        int result = chan_out_test(chan, addr, &status);
+    return send_msg(client, &buf, 1);
+}
 
-        if (result < 0) {
-            printf("\tresult = %d\n", result);
-            return;
-        }
+bool send_error_msg(struct client *client, uint8_t num, char *text)
+{
+    uint8_t buf[102];
 
-        if (result == 0) {
-            printf("\tno pending status\n");
-            break;
-        }
+    buf[0] = MSG_TYPE_ERROR;
+    buf[1] = num;
 
-        printf("\tstatus = 0x%.2x\n", status);
+    size_t len = MIN(strlen(text), 100);
 
-        if (status == 0x00) {
-            break;
-        }
+    memcpy(&buf[2], text, len);
 
-        sleep(1);
+    len += 2;
+
+    return send_msg(client, &buf, len);
+}
+
+bool send_status_msg(struct client *client, uint8_t dev_addr, uint8_t status, bool solicited)
+{
+    uint8_t buf[4];
+
+    buf[0] = MSG_TYPE_STATUS;
+    buf[1] = dev_addr;
+    buf[2] = status;
+    buf[3] = solicited;
+
+    return send_msg(client, &buf, 4);
+}
+
+bool send_data_msg(struct client *client, uint8_t dev_addr, void *data, size_t count)
+{
+    size_t len = 2;
+
+    if (data != NULL) {
+        len += count;
+    } else {
+        len += 2;
     }
+
+    uint8_t buf[7];
+
+    buf[0] = 0;
+    buf[1] = (len & 0xff00) >> 8;
+    buf[2] = len & 0x00ff;
+    buf[3] = MSG_TYPE_DATA;
+    buf[4] = dev_addr;
+
+    if (data == NULL) {
+        buf[5] = (count & 0xff00) >> 8;
+        buf[6] = count & 0x00ff;
+    }
+
+    // Now, make len the buffer length.
+    len = (data != NULL) ? 5 : 7;
+
+    if (write(client->sock, &buf, len) < len) {
+        return false;
+    }
+
+    if (data != NULL) {
+        if (write(client->sock, data, count) < count) {
+            return false;
+        }
+    }
+
+    return true;
 }
