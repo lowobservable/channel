@@ -383,11 +383,14 @@ module axi_mm_channel_out (
     wire channel_out_tvalid;
     reg channel_out_tready;
 
+    wire [1:0] channel_data_direction;
     reg channel_suppress_status = 1;
     reg channel_burst = 0;
     wire channel_connected;
     wire channel_request;
     wire [15:0] channel_error;
+
+    assign channel_data_direction = { 1'b1, command[0] };
 
     channel_out_protocol #(
         .CLOCKS_PER_100_NS(CLOCKS_PER_100_NS)
@@ -403,6 +406,7 @@ module axi_mm_channel_out (
         .out_tvalid(channel_out_tvalid),
         .out_tready(channel_out_tready),
 
+        .data_direction(channel_data_direction),
         .suppress_status(channel_suppress_status),
         .burst(channel_burst),
         .connected(channel_connected),

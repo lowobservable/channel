@@ -12,6 +12,7 @@ module channel_out_protocol_tb;
     reg protocol_in_tvalid = 0;
     reg protocol_out_tready = 0;
 
+    reg [1:0] protocol_data_direction = 2'b00; // Not specified
     reg protocol_burst = 0; // Selector channel behavior
 
     wire [7:0] bus_in;
@@ -44,6 +45,7 @@ module channel_out_protocol_tb;
 
         .out_tready(sink.s_axi_tready),
 
+        .data_direction(protocol_data_direction),
         .suppress_status(1'b0),
         .burst(protocol_burst),
 
@@ -305,6 +307,8 @@ module channel_out_protocol_tb;
         cu_mock_request <= 0;
         cu_mock_limit <= 16; // CU can provide 16 bytes
 
+        protocol_data_direction <= 2'b10; // Should also work for "not specified"
+
         @(posedge clk);
 
         exec({ 8'h11, 8'h1a, 8'h02 }, out); // Initial Selection - READ
@@ -363,6 +367,8 @@ module channel_out_protocol_tb;
         cu_mock_short_busy <= 0;
         cu_mock_request <= 0;
         cu_mock_limit <= 16; // CU can provide 16 bytes
+
+        protocol_data_direction <= 2'b11; // Should also work for "not specified"
 
         @(posedge clk);
 

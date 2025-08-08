@@ -52,6 +52,7 @@ module channel_out_protocol (
     output reg out_tvalid,
     input wire out_tready,
 
+    input wire [1:0] data_direction,
     input wire suppress_status,
 
     // TODO: The driver is currently responsible for lowering burst, to allow
@@ -1024,9 +1025,9 @@ module channel_out_protocol (
 
                 if (a_operational_in && a_service_in && !a_select_in && !a_address_in && !a_status_in)
                 begin
-                    // TODO: This module is unaware of the transfer direction
-                    // which means this delay is unecessary in some cases.
-                    if (state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
+                    // Bus in skew delay is only required if data is being
+                    // received, or if the data direction is not specified.
+                    if (data_direction == 2'b11 || state_timer == BUS_IN_SKEW_DELAY_100_NS * CLOCKS_PER_100_NS)
                     begin
                         next_state = STATE_DATA_TRANSFER_2;
                     end
