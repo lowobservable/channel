@@ -19,6 +19,7 @@ ssize_t chan_exec(struct chan_out *out, uint8_t addr, uint8_t cmd, uint8_t flags
     }
 
     uint8_t cumulative_status = 0;
+    bool done = false;
 
     do {
         uint8_t pending_status;
@@ -35,13 +36,16 @@ ssize_t chan_exec(struct chan_out *out, uint8_t addr, uint8_t cmd, uint8_t flags
         }
 
         cumulative_status |= pending_status;
-    } while ((cumulative_status & 0x0c) != 0x0c);
+
+        // I think a solitary CE is the only penultimate status, all other
+        // combinations should indicate the command was not accepted or has been
+        // completed.
+        done = (pending_status != CHAN_STATUS_CE);
+    } while (!done);
 
     if (status != NULL) {
         *status = cumulative_status;
     }
-
-    // TODO: check status... for UC?
 
     return chan_out_complete(out, cmd, buf, count);
 }

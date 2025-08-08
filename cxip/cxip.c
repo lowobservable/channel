@@ -489,9 +489,7 @@ bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_add
 
     char fmt_status_buf[CHAN_FMT_STATUS_BUF_SIZE];
 
-    bool is_send_cmd = chan->cmd & 0x01;
-
-    if (solicited && (status & CHAN_STATUS_CE)) {
+    if (solicited && chan->count > 0 && (status & CHAN_STATUS_CE)) {
         ssize_t result = chan_out_complete(&chan->out, chan->cmd, chan->recv_buf, chan->count);
 
         if (result < 0) {
@@ -499,19 +497,23 @@ bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_add
             return false;
         }
 
-        if (chan->count > 0) {
-            size_t residual_count = chan->count - result;
+        size_t residual_count = chan->count - result;
 
-            printf("%.2X | Data   | [Transfer = %zd] [Count = %zu] [Residual = %zu]\n", dev_addr, result, chan->count, residual_count);
-            if (is_send_cmd) {
-                send_data_msg(client, dev_addr, NULL, result);
-            } else {
-                send_data_msg(client, dev_addr, chan->recv_buf, result);
-            }
+        printf("%.2X | Data   | [Transfer = %zd] [Count = %zu] [Residual = %zu]\n", dev_addr, result, chan->count, residual_count);
+
+        bool is_send_cmd = chan->cmd & 0x01;
+
+        if (is_send_cmd) {
+            send_data_msg(client, dev_addr, NULL, result);
+        } else {
+            send_data_msg(client, dev_addr, chan->recv_buf, result);
         }
     }
 
-    if (solicited && (status & CHAN_STATUS_DE)) {
+    // I think a solitary CE is the only penultimate status, all other
+    // combinations should indicate the command was not accepted or has been
+    // completed.
+    if (solicited && status != CHAN_STATUS_CE) {
         chan->solicited = false;
     }
 

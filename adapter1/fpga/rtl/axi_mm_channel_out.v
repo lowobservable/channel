@@ -573,24 +573,27 @@ module axi_mm_channel_out (
 
                         channel_state <= CHANNEL_STATE_IDLE;
                     end
+                    else if (status == 8'h00) // Accepted
+                    begin
+                        subchannel_active <= 1;
+                        device_active <= 1;
+
+                        channel_state <= CHANNEL_STATE_CONNECTED;
+                    end
+                    else if (status == 8'h08) // Channel End
+                    begin
+                        // Immediate command that no longer requires the channel,
+                        // but is not device end.
+                        device_active <= 1;
+                        status_pending <= 1;
+
+                        channel_state <= CHANNEL_STATE_IDLE;
+                    end
                     else
                     begin
-                        subchannel_active <= !status[3]; // Channel End
-                        device_active <= !status[2]; // Device End
+                        status_pending <= 1;
 
-                        if (status != 8'h00) // Accepted
-                        begin
-                            status_pending <= 1;
-                        end
-
-                        if (!status[3])
-                        begin
-                            channel_state <= CHANNEL_STATE_CONNECTED;
-                        end
-                        else
-                        begin
-                            channel_state <= CHANNEL_STATE_IDLE;
-                        end
+                        channel_state <= CHANNEL_STATE_IDLE;
                     end
                 end
 

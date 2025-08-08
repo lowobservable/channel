@@ -28,16 +28,12 @@ def main():
 
         print(f'\tstatus = {status!r}')
 
-        ensure_device_end(sock, status)
-
         print('SENSE ID...')
 
         (status, data) = cxip_exec(sock, addr, CMD_SENSE_ID, 7)
 
         print(f'\tstatus = {status!r}')
         print('\tdata = ' + ' '.join(['{0:02x}'.format(x) for x in data]))
-
-        ensure_device_end(sock, status)
 
         if data != b'\xff\x31\x74\x1d':
             print('Expected ID to be 31 74 1D for a 3174-1L...')
@@ -54,11 +50,9 @@ def main():
 
             print(f'\tstatus = {status!r}')
 
-            ensure_device_end(sock, status)
+            (_, status, solicited) = wait_for_status(sock)
 
-            (_, status) = wait_for_status(sock)
-
-            if Status.ATTN in status:
+            if not solicited and Status.ATTN in status:
                 print('ATTN!')
                 print('READ MODIFIED...')
 
@@ -66,8 +60,6 @@ def main():
 
                 print(f'\tstatus = {status!r}')
                 print('\tdata = ' + ' '.join(['{0:02x}'.format(x) for x in data]))
-
-                ensure_device_end(sock, status)
 
                 aid = data[0]
 
@@ -130,12 +122,12 @@ def cxip_open(sock, addr):
 def cxip_exec(sock, addr, cmd, data_or_count=None):
     flags = 0
 
-    is_channel_send_cmd = bool(cmd & 0x01)
+    is_send_cmd = bool(cmd & 0x01)
 
     data = b''
     count = 0
 
-    if is_channel_send_cmd:
+    if is_send_cmd:
         if data_or_count:
             data = bytes(data_or_count)
             count = len(data)
@@ -148,24 +140,34 @@ def cxip_exec(sock, addr, cmd, data_or_count=None):
 
     send_msg(sock, msg)
 
-    if count > 0:
+    cumulative_status = 0
+    done = False
+
+    while not done:
         msg = recv_msg(sock)
 
-        if msg[0] != 0x06:
-            raise Exception('Expected DATA response')
-
-        if is_channel_send_cmd:
+        if msg[0] == 0x06 and is_send_cmd:
             (count,) = struct.unpack('!H', msg[2:])
-        else:
+        elif msg[0] == 0x06 and not is_send_cmd:
             data = msg[2:]
             count = len(data)
+        elif msg[0] == 0x05:
+            (_, status, status_flags) = struct.unpack('BBB', msg[1:])
 
-    (_, status, solicited) = wait_for_status(sock)
+            status = Status(status)
+            solicited = bool(status_flags)
 
-    if not solicited:
-        raise Exception('Expected status to be solicited')
+            if not solicited:
+                raise Exception('Expected status to be solicited')
 
-    if is_channel_send_cmd:
+            cumulative_status |= status
+
+            # NOTE: See libchan chan_exec for assumption.
+            done = (status != Status.CE)
+        else:
+            raise Exception('Expected STATUS or DATA response')
+
+    if is_send_cmd:
         return (status, count)
     else:
         return (status, data)
@@ -182,12 +184,6 @@ def wait_for_status(sock):
     solicited = bool(flags)
 
     return (addr, status, solicited)
-
-def ensure_device_end(sock, status):
-    while Status.DE not in status:
-        (_, status, _) = wait_for_status(sock)
-
-    return status
 
 def send_msg(sock, msg):
     sock.sendall(struct.pack('!BH', 0, len(msg)) + msg)

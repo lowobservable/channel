@@ -195,6 +195,7 @@ static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U
     }
 
     uint8_t cumulative_status = 0;
+    bool done = false;
 
     do {
         uint8_t msg[MSG_BUF_SIZE];
@@ -225,6 +226,9 @@ static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U
             uint8_t status = msg[2];
 
             cumulative_status |= status;
+
+            // NOTE: See libchan chan_exec for assumption.
+            done = (status != CSW_CE);
         } else if (msg_type == CXIP_MSG_TYPE_ERROR && msg_len > 1) {
             uint8_t error_num = msg[1];
 
@@ -259,7 +263,7 @@ static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U
             // TODO: This would be an invalid message.
             CXIP_LOGMSG("ERROR: Invalid or unexpected message\n");
         }
-    } while (!(cumulative_status & CSW_DE));
+    } while (!done);
 
     *unitstat = cumulative_status;
     *residual -= actual_count;
