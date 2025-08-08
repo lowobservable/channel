@@ -13,6 +13,7 @@
 #include <sys/epoll.h>
 #include <sys/param.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <assert.h>
 
 #include <real.h>
@@ -39,6 +40,7 @@ struct chan {
 #define MSG_BUF_SIZE(D) (MAX((D) + 32, 1024))
 
 struct client {
+    char name[16]; // Client IP address for now
     int sock;
     uint8_t *msg_buf;
     size_t msg_buf_size;
@@ -240,6 +242,19 @@ bool serve(int listen_sock, struct chan *chan)
                     continue;
                 }
 
+                struct sockaddr_in addr;
+                socklen_t addr_len = sizeof(struct sockaddr_in);
+
+                if (getpeername(sock, (struct sockaddr_in *) &addr, &addr_len) < 0) {
+                    perror("getpeername");
+                    return false;
+                }
+
+                if (inet_ntop(AF_INET, &addr.sin_addr, client.name, 15) == NULL) {
+                    perror("inet_ntop");
+                    return false;
+                }
+
                 client.sock = sock;
 
                 ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP;
@@ -325,14 +340,14 @@ bool serve(int listen_sock, struct chan *chan)
 
 bool handle_connect(struct client *client, struct chan *chan)
 {
-    printf("Client connected\n");
+    printf("Client %s connected\n", client->name);
 
     return true;
 }
 
 bool handle_disconnect(struct client *client, struct chan *chan)
 {
-    printf("Client disconnected\n");
+    printf("Client %s disconnected\n", client->name);
 
     if (client->dev_addr != -1) {
         chan_out_config(&chan->out, client->dev_addr, false);
@@ -353,54 +368,48 @@ bool handle_msg(struct client *client, uint8_t *msg, size_t len, struct chan *ch
     uint8_t msg_type = msg[0];
 
     if (msg_type == MSG_TYPE_PING) {
-        printf("Ping\n");
-
         if (len != 1) {
-            printf("ERROR: Invalid message length: %zu\n", len);
+            printf("ERROR: Invalid PING message length: %zu\n", len);
             return close_client(client, chan);
         }
 
         return send_ack_msg(client);
     } else if (msg_type == MSG_TYPE_OPEN) {
-        printf("Open\n");
-
         if (len != 2) {
-            printf("ERROR: Invalid message length: %zu\n", len);
+            printf("ERROR: Invalid OPEN message length: %zu\n", len);
             return close_client(client, chan);
         }
 
         uint8_t dev_addr = msg[1];
 
-        printf("\tAddr = %.2x\n", dev_addr);
-
         if (client->dev_addr == dev_addr) {
-            printf("\tWarn: Already open\n");
+            printf("WARN: Device %.2X already open\n", dev_addr);
             return send_error_msg(client, 0, "Device already open");
         }
 
         chan_out_config(&chan->out, dev_addr, true);
 
+        printf("%.2X | Open   |\n", dev_addr);
+
         client->dev_addr = dev_addr;
 
         return send_ack_msg(client);
     } else if (msg_type == MSG_TYPE_CLOSE) {
-        printf("Close\n");
-
         if (len != 2) {
-            printf("ERROR: Invalid message length: %zu\n", len);
+            printf("ERROR: Invalid CLOSE message length: %zu\n", len);
             return close_client(client, chan);
         }
 
         uint8_t dev_addr = msg[1];
 
-        printf("\tAddr = %.2x\n", dev_addr);
-
         if (client->dev_addr != dev_addr) {
-            printf("\tWarn: Not open\n");
+            printf("WARN: Device %.2X not open\n", dev_addr);
             return send_error_msg(client, 0, "Device not open");
         }
 
         chan_out_config(&chan->out, dev_addr, false);
+
+        printf("%.2X | Close  |\n", dev_addr);
 
         client->dev_addr = -1;
 
@@ -417,19 +426,15 @@ bool handle_msg(struct client *client, uint8_t *msg, size_t len, struct chan *ch
 
 bool handle_start_msg(struct client *client, uint8_t *msg, size_t len, struct chan *chan)
 {
-    printf("Start\n");
-
     if (len < 4) {
-        printf("\tERROR: Invalid message length: %zu\n", len);
+        printf("ERROR: Invalid START message length: %zu\n", len);
         return close_client(client, chan);
     }
 
     uint8_t dev_addr = msg[1];
 
-    printf("\tAddr = %.2x\n", dev_addr);
-
     if (client->dev_addr != dev_addr) {
-        printf("\tWarn: Not open\n");
+        printf("WARN: Device %.2X not open\n", dev_addr);
         return send_error_msg(client, 0, "Device not open");
     }
 
@@ -447,7 +452,7 @@ bool handle_start_msg(struct client *client, uint8_t *msg, size_t len, struct ch
         count = len - 4;
     } else {
         if (len < 6) {
-            printf("\tERROR: Invalid message length: %zu\n", len);
+            printf("ERROR: Invalid START message length: %zu\n", len);
             return close_client(client, chan);
         }
 
@@ -455,17 +460,21 @@ bool handle_start_msg(struct client *client, uint8_t *msg, size_t len, struct ch
         count = (msg[4] << 8) | msg[5];
     }
 
-    printf("\tCmd = %.2x, Flags = %.2x, Count = %zu\n", cmd, flags, count);
+    char fmt_cmd_buf[CHAN_FMT_CMD_BUF_SIZE];
+
+    printf("%.2X | Start  | %s [Count = %zu]", dev_addr, chan_fmt_cmd(cmd, fmt_cmd_buf, sizeof(fmt_cmd_buf)), count);
 
     int start_result = chan_out_start(&chan->out, dev_addr, cmd, flags, data, count);
 
     if (start_result == -1) {
-        printf("chan_out_start error: %d\n", start_result);
+        printf("\nchan_out_start error: %d\n", start_result);
         return false;
     } else if (start_result < -1) {
-        printf("\tError = %d\n", start_result);
+        printf(" [Error %d]\n", start_result);
         return send_error_msg(client, start_result * (-1), "Start error");
     }
+
+    printf("\n");
 
     chan->solicited = true;
     chan->cmd = cmd;
@@ -476,10 +485,10 @@ bool handle_start_msg(struct client *client, uint8_t *msg, size_t len, struct ch
 
 bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_addr, uint8_t status)
 {
-    printf("Status\n");
-    printf("\tAddr = %.2x, Status = %.2x\n", dev_addr, status);
-
     bool solicited = chan->solicited;
+
+    char fmt_status_buf[CHAN_FMT_STATUS_BUF_SIZE];
+
     bool is_send_cmd = chan->cmd & 0x01;
 
     if (solicited && (status & CHAN_STATUS_CE)) {
@@ -491,6 +500,9 @@ bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_add
         }
 
         if (chan->count > 0) {
+            size_t residual_count = chan->count - result;
+
+            printf("%.2X | Data   | [Transfer = %zd] [Count = %zu] [Residual = %zu]\n", dev_addr, result, chan->count, residual_count);
             if (is_send_cmd) {
                 send_data_msg(client, dev_addr, NULL, result);
             } else {
@@ -502,6 +514,8 @@ bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_add
     if (solicited && (status & CHAN_STATUS_DE)) {
         chan->solicited = false;
     }
+
+    printf("%.2X | Status | %s %s\n", dev_addr, chan_fmt_status(status, fmt_status_buf, sizeof(fmt_status_buf)), solicited ? "[Solicited]" : "");
 
     return send_status_msg(client, dev_addr, status, solicited);
 }

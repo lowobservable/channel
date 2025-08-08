@@ -161,7 +161,7 @@ static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U
 
     struct cxip *cxip = (struct cxip *) dev->dev_data;
 
-    CXIP_LOGMSG("Starting, C=%.2x, N=%u\n", code, count);
+    CXIP_LOGMSG("Starting cmd %.2X, count %u\n", code, count);
 
     *residual = count;
     *more = 0;
@@ -264,7 +264,7 @@ static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U
     *unitstat = cumulative_status;
     *residual -= actual_count;
 
-    CXIP_LOGMSG("Complete, CS=%.2x, N1=%u, N2=%u, N3=%u\n", *unitstat, count, actual_count, *residual);
+    CXIP_LOGMSG("Completed cmd %.2X, status %.2X, transfered %u, residual %u\n", code, *unitstat, actual_count, *residual);
     return;
 
 error:
@@ -380,7 +380,7 @@ void *cxip_worker(void *arg)
                 if (msg_type == CXIP_MSG_TYPE_STATUS && msg_len == 4 && !cxip->msg_buf[6]) {
                     uint8_t status = cxip->msg_buf[5];
 
-                    CXIP_LOGMSG("[Worker] Unsolicited status = %.2x\n", status);
+                    CXIP_LOGMSG("[Worker] Unsolicited status %.2X\n", status);
 
                     int result = device_attention(dev, status);
 
