@@ -21,6 +21,9 @@
 #define CHAN_STATUS_UC          0x02    // Unit Check
 #define CHAN_STATUS_UX          0x01    // Unit Exception
 
+#define CHAN_FMT_STATUS_BUF_SIZE 28
+#define CHAN_FMT_CMD_BUF_SIZE   13
+
 #define CHAN_ERR_ARGS           -2      // Invalid arguments
 #define CHAN_ERR_CHANNEL_STATE  -3      // Invalid channel state
 #define CHAN_ERR_DEVICE_STATE   -4      // Invalid device state
@@ -65,5 +68,9 @@ ssize_t chan_exec_basic_sense(struct chan_out *out, uint8_t addr, void *buf, siz
 ssize_t chan_exec_sense_id(struct chan_out *out, uint8_t addr, void *buf, size_t count, uint8_t *status);
 
 int chan_exec_nop(struct chan_out *out, uint8_t addr, uint8_t *status);
+
+char *chan_fmt_status(uint8_t status, char *buf, size_t size);
+
+char *chan_fmt_cmd(uint8_t cmd, char *buf, size_t size);
 
 #endif
