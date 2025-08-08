@@ -375,7 +375,7 @@ void *cxip_worker(void *arg)
             if (msg_len > 0) {
                 uint8_t msg_type = cxip->msg_buf[3];
 
-                //CXIP_LOGMSG("[Worker] Received %zu byte message (type = %.2x)\n", msg_len, msg_type);
+                //CXIP_LOGMSG("[Worker] Have complete %zu byte message (type = %.2x)\n", msg_len, msg_type);
 
                 if (msg_type == CXIP_MSG_TYPE_STATUS && msg_len == 4 && !cxip->msg_buf[6]) {
                     uint8_t status = cxip->msg_buf[5];
@@ -414,9 +414,9 @@ void *cxip_worker(void *arg)
             // Move to the next message.
             //CXIP_LOGMSG("[Worker] Message read, moving to the next message\n");
 
-            memmove(cxip->msg_buf, cxip->msg_buf + 3 + msg_len, 3 + msg_len);
-
             cxip->msg_buf_len -= (3 + msg_len);
+
+            memmove(cxip->msg_buf, cxip->msg_buf + 3 + msg_len, cxip->msg_buf_len);
         }
 
         hthread_mutex_unlock(&cxip->msg_lock);
