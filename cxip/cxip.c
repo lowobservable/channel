@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <errno.h>
 #include <signal.h>
 #include <sys/socket.h>
@@ -22,9 +23,18 @@
 
 #include <cxip_protocol.h>
 
+#define CLIENTS_MAX 1
+
 struct chan {
     struct chan_out out;
     uint8_t *recv_buf; // Client message buffer is used when sending data to the device
+};
+
+struct dev {
+    uint16_t num;
+    struct chan *chan;
+    uint8_t addr;
+    struct client *client;
     bool solicited;
     uint8_t cmd;
     size_t count;
@@ -38,20 +48,29 @@ struct client {
     uint8_t *msg_buf;
     size_t msg_buf_size;
     size_t msg_buf_len;
-    int dev_addr;
 };
 
-static bool serve(int listen_sock, struct chan *chan);
+struct state {
+    struct chan *chan;
+    struct dev *dev;
+    struct client clients[CLIENTS_MAX];
+};
 
-static bool handle_connect(struct client *client, struct chan *chan);
-static bool handle_client_data(struct client *client);
+static bool serve(int listen_sock, struct chan *chan, struct dev *dev);
+
+static bool handle_connect(int sock, struct client **client, struct state *state);
+static bool handle_client_data(struct client *client, struct state *state);
 static void discard_msg(struct client *client, size_t msg_len);
-static bool handle_msg(struct client *client, uint8_t *msg, size_t msg_len, struct chan *chan);
-static bool handle_start_msg(struct client *client, uint8_t *msg, size_t msg_len, struct chan *chan);
-static bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_addr, uint8_t status);
+static bool handle_msg(struct client *client, uint8_t *msg, size_t msg_len, struct state *state);
+static bool handle_start_msg(struct client *client, uint8_t *msg, size_t msg_len, struct state *state);
+static bool handle_dev_status(struct dev *dev, uint8_t status);
 
-static bool init_client(struct client *client, struct chan *chan);
-static bool close_client(struct client *client, struct chan *chan);
+static struct dev *find_dev(struct state *state, int num);
+static struct client *find_client(struct state *state, int sock);
+static bool close_client(struct client *client, struct state *state);
+
+static void usage(char *cmd);
+static bool parse_dev_config(char *config, uint16_t *num, uint8_t *addr);
 
 int main(int argc, char **argv)
 {
@@ -72,10 +91,32 @@ int main(int argc, char **argv)
                 break;
 
             default:
-                printf("Usage: %s [-lm]\n", argv[0]);
+                usage(argv[0]);
                 return EXIT_FAILURE;
         }
     }
+
+    if (optind >= argc) {
+        usage(argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    char *dev_config;
+
+    if ((dev_config = strdup(argv[optind])) == NULL) {
+        perror("strdup");
+        return EXIT_FAILURE;
+    }
+
+    uint16_t dev_num;
+    uint8_t dev_addr;
+
+    if (!parse_dev_config(dev_config, &dev_num, &dev_addr)) {
+        printf("Device config invalid: %s\n", argv[optind]);
+        return EXIT_FAILURE;
+    }
+
+    free(dev_config);
 
     int mem_fd;
 
@@ -112,7 +153,7 @@ int main(int argc, char **argv)
     if (frontend_enable && mock_enable) {
         printf("WARN: Mock CU and physical interface enabled\n");
     } else if (!frontend_enable && !mock_enable) {
-        printf("WARN: Loopback with no mock CU, no CUs available\n");
+        printf("WARN: Loopback with no mock CU, no devices will be operational\n");
     } else if (!frontend_enable) {
         printf("WARN: Physical interface not enabled, acting as loopback\n");
     }
@@ -134,6 +175,15 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    struct dev dev;
+
+    dev.num = dev_num;
+    dev.chan = &chan;
+    dev.addr = dev_addr;
+    dev.client = NULL;
+
+    printf("Device number %.4X configured for address %.2X\n", dev.num, dev.addr);
+
     chan_out_enable(&chan.out);
 
     struct mock_cu mock_cu;
@@ -152,7 +202,7 @@ int main(int argc, char **argv)
         mock_cu_arrange(&mock_cu, false, false, false, 16);
     }
 
-    bool success = serve(listen_sock, &chan);
+    bool success = serve(listen_sock, &chan, &dev);
 
     if (mock_enable) {
         mock_cu_close(&mock_cu);
@@ -177,7 +227,7 @@ static void signal_handler(int signum)
     }
 }
 
-bool serve(int listen_sock, struct chan *chan)
+bool serve(int listen_sock, struct chan *chan, struct dev *dev)
 {
     int epfd;
 
@@ -196,13 +246,26 @@ bool serve(int listen_sock, struct chan *chan)
         return false;
     }
 
-    printf("Listening...\n");
+    struct state state;
 
-    struct client client;
+    state.chan = chan;
+    state.dev = dev;
 
-    if (!init_client(&client, chan)) {
-        return false;
+    for (size_t index = 0; index < CLIENTS_MAX; index++) {
+        struct client *client = &state.clients[index];
+
+        client->sock = -1;
+        client->msg_buf_size = MSG_BUF_SIZE(chan->out.udmabuf.size);
+
+        if ((client->msg_buf = malloc(client->msg_buf_size)) == NULL) {
+            perror("malloc");
+            return false;
+        }
+
+        client->msg_buf_len = 0;
     }
+
+    printf("Listening...\n");
 
     signal(SIGINT, signal_handler);
 
@@ -220,86 +283,87 @@ bool serve(int listen_sock, struct chan *chan)
                     return false;
                 }
 
-                if (client.sock != -1) {
-                    printf("Connection rejected due to active client\n");
+                struct client *client;
+
+                if (!handle_connect(sock, &client, &state)) {
+                    return false;
+                }
+
+                if (client == NULL) {
+                    printf("Connection rejected, client connection limit reached\n");
 
                     close(sock);
                     continue;
                 }
 
-                struct sockaddr_in addr;
-                socklen_t addr_len = sizeof(struct sockaddr_in);
-
-                if (getpeername(sock, (struct sockaddr_in *) &addr, &addr_len) < 0) {
-                    perror("getpeername");
-                    return false;
-                }
-
-                if (inet_ntop(AF_INET, &addr.sin_addr, client.name, 15) == NULL) {
-                    perror("inet_ntop");
-                    return false;
-                }
-
-                client.sock = sock;
-
                 ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP;
-                ev.data.fd = client.sock;
+                ev.data.fd = client->sock;
 
-                if (epoll_ctl(epfd, EPOLL_CTL_ADD, client.sock, &ev) < 0) {
+                if (epoll_ctl(epfd, EPOLL_CTL_ADD, client->sock, &ev) < 0) {
                     perror("epoll_ctl");
                     return false;
                 }
 
-                if (!handle_connect(&client, chan)) {
-                    return false;
-                }
+                printf("Client %s connected\n", client->name);
             } else if (event.events & EPOLLIN) {
-                assert(event.data.fd == client.sock);
+                struct client *client = find_client(&state, event.data.fd);
 
-                if (!handle_client_data(&client)) {
-                    if (!close_client(&client, chan)) {
+                assert(client != NULL);
+
+                if (!handle_client_data(client, &state)) {
+                    if (!close_client(client, &state)) {
                         return false;
                     }
                 }
             }
 
             if (event.events & (EPOLLRDHUP | EPOLLHUP)) {
-                assert(event.data.fd == client.sock);
+                struct client *client = find_client(&state, event.data.fd);
 
-                printf("Client %s disconnected\n", client.name);
+                assert(client != NULL);
 
-                if (!close_client(&client, chan)) {
+                printf("Client %s disconnected\n", client->name);
+
+                if (!close_client(client, &state)) {
                     return false;
                 }
             }
         }
 
-        if (client.sock != -1) {
+        // TODO: It might be more efficient to only do this if there is socket
+        // activity, although we'd need to burn down all the messages.
+        for (size_t index = 0; index < CLIENTS_MAX; index++) {
+            struct client *client = &state.clients[index];
+
+            if (client->sock == -1) {
+                continue;
+            }
+
             uint8_t *msg;
 
-            ssize_t msg_len = cxip_decode_msg(client.msg_buf, client.msg_buf_len, &msg);
+            ssize_t msg_len = cxip_decode_msg(client->msg_buf, client->msg_buf_len, &msg);
 
             if (msg_len < 0) {
                 printf("ERROR: Invalid message\n");
 
-                if (!close_client(&client, chan)) {
+                if (!close_client(client, &state)) {
                     return false;
                 }
             }
 
             if (msg_len > 0) {
-                if (!handle_msg(&client, msg, msg_len, chan)) {
+                if (!handle_msg(client, msg, msg_len, &state)) {
                     return false;
                 }
 
-                discard_msg(&client, msg_len);
+                discard_msg(client, msg_len);
             }
         }
 
-        if (client.sock != -1 && client.dev_addr != -1) {
+        if (state.dev->client != NULL) {
             uint8_t status;
 
-            int test_result = chan_out_test(&chan->out, client.dev_addr, &status);
+            int test_result = chan_out_test(&state.dev->chan->out, state.dev->addr, &status);
 
             if (test_result < 0) {
                 printf("chan_out_test error: %d\n", test_result);
@@ -307,7 +371,7 @@ bool serve(int listen_sock, struct chan *chan)
             }
 
             if (test_result) {
-                if (!handle_dev_status(&client, chan, client.dev_addr, status)) {
+                if (!handle_dev_status(state.dev, status)) {
                     return false;
                 }
             }
@@ -325,14 +389,47 @@ bool serve(int listen_sock, struct chan *chan)
     return true;
 }
 
-bool handle_connect(struct client *client, struct chan *chan)
+bool handle_connect(int sock, struct client **client, struct state *state)
 {
-    printf("Client %s connected\n", client->name);
+    *client = NULL;
+
+    // Try and locate a free slot...
+    struct client *free_client = find_client(state, -1);
+
+    if (free_client == NULL) {
+        return true;
+    }
+
+    struct sockaddr_in addr;
+    socklen_t addr_len = sizeof(struct sockaddr_in);
+
+    if (getpeername(sock, (struct sockaddr_in *) &addr, &addr_len) < 0) {
+        perror("getpeername");
+        return false;
+    }
+
+    if (inet_ntop(AF_INET, &addr.sin_addr, free_client->name, 15) == NULL) {
+        perror("inet_ntop");
+        return false;
+    }
+
+    free_client->sock = sock;
+
+    free_client->msg_buf_size = MSG_BUF_SIZE(state->chan->out.udmabuf.size);
+
+    if ((free_client->msg_buf = malloc(free_client->msg_buf_size)) == NULL) {
+        perror("malloc");
+        return false;
+    }
+
+    free_client->msg_buf_len = 0;
+
+    *client = free_client;
 
     return true;
 }
 
-bool handle_client_data(struct client *client)
+bool handle_client_data(struct client *client, struct state *state)
 {
     size_t remaining = client->msg_buf_size - client->msg_buf_len;
 
@@ -346,8 +443,7 @@ bool handle_client_data(struct client *client)
         }
 
         if (result < 0) {
-            perror("read");
-            return false;
+            return close_client(client, state);
         }
 
         client->msg_buf_len += result;
@@ -366,56 +462,82 @@ void discard_msg(struct client *client, size_t msg_len)
     }
 }
 
-bool handle_msg(struct client *client, uint8_t *msg, size_t msg_len, struct chan *chan)
+bool handle_msg(struct client *client, uint8_t *msg, size_t msg_len, struct state *state)
 {
-    uint8_t dev_addr;
+    uint16_t dev_num;
 
     if (cxip_decode_start(msg, msg_len, NULL, NULL, NULL, NULL, NULL)) {
-        return handle_start_msg(client, msg, msg_len, chan);
-    } else if (cxip_decode_open(msg, msg_len, &dev_addr)) {
-        if (client->dev_addr == dev_addr) {
-            printf("WARN: Device %.2X already open\n", dev_addr);
+        return handle_start_msg(client, msg, msg_len, state);
+    } else if (cxip_decode_open(msg, msg_len, &dev_num)) {
+        struct dev *dev = find_dev(state, dev_num);
+
+        if (dev == NULL) {
+            printf("WARN: Device %.4X is not defined\n", dev_num);
+            return cxip_send_error(client->sock, 0, "Device not defined");
+        }
+
+        if (dev->client != NULL) {
+            printf("WARN: Device %.4X already open\n", dev_num);
             return cxip_send_error(client->sock, 0, "Device already open");
         }
 
-        chan_out_config(&chan->out, dev_addr, true);
+        chan_out_config(&dev->chan->out, dev->addr, true);
 
-        printf("%.2X | Open   |\n", dev_addr);
+        printf("%.4X | %.2X | Open   |\n", dev->num, dev->addr);
 
-        client->dev_addr = dev_addr;
+        dev->client = client;
 
         return cxip_send_ack(client->sock);
-    } else if (cxip_decode_close(msg, msg_len, &dev_addr)) {
-        if (client->dev_addr != dev_addr) {
-            printf("WARN: Device %.2X not open\n", dev_addr);
+    } else if (cxip_decode_close(msg, msg_len, &dev_num)) {
+        struct dev *dev = find_dev(state, dev_num);
+
+        if (dev == NULL) {
+            printf("WARN: Device %.4X is not defined\n", dev_num);
+            return cxip_send_error(client->sock, 0, "Device not defined");
+        }
+
+        if (dev->client != client) {
+            printf("WARN: Device %.4X not open\n", dev_num);
             return cxip_send_error(client->sock, 0, "Device not open");
         }
 
-        chan_out_config(&chan->out, dev_addr, false);
+        chan_out_config(&dev->chan->out, dev->addr, false);
 
-        printf("%.2X | Close  |\n", dev_addr);
+        printf("%.4X | %.2X | Close  |\n", dev->num, dev->addr);
 
-        client->dev_addr = -1;
+        dev->client = NULL;
 
         return cxip_send_ack(client->sock);
     } else {
         printf("ERROR: Invalid message\n");
-        return close_client(client, chan);
+        return close_client(client, state);
     }
 
     return true;
 }
 
-bool handle_start_msg(struct client *client, uint8_t *msg, size_t msg_len, struct chan *chan)
+bool handle_start_msg(struct client *client, uint8_t *msg, size_t msg_len, struct state *state)
 {
-    uint8_t dev_addr;
+    uint16_t dev_num;
     uint8_t cmd;
     uint8_t flags;
     void *data;
     uint16_t count;
 
-    if (!cxip_decode_start(msg, msg_len, &dev_addr, &cmd, &flags, &data, &count)) {
+    if (!cxip_decode_start(msg, msg_len, &dev_num, &cmd, &flags, &data, &count)) {
         return false;
+    }
+
+    struct dev *dev = find_dev(state, dev_num);
+
+    if (dev == NULL) {
+        printf("WARN: Device %.4X is not defined\n", dev_num);
+        return cxip_send_error(client->sock, 0, "Device not defined");
+    }
+
+    if (dev->client != client) {
+        printf("WARN: Device %.4X not open\n", dev_num);
+        return cxip_send_error(client->sock, 0, "Device not open");
     }
 
     // Determine if the command will result in data being received from the
@@ -423,14 +545,14 @@ bool handle_start_msg(struct client *client, uint8_t *msg, size_t msg_len, struc
     bool is_recv_cmd = !(cmd & 0x01);
 
     if (is_recv_cmd) {
-        data = chan->recv_buf;
+        data = NULL;
     }
 
     char fmt_cmd_buf[CHAN_FMT_CMD_BUF_SIZE];
 
-    printf("%.2X | Start  | %s [Count = %u]", dev_addr, chan_fmt_cmd(cmd, fmt_cmd_buf, sizeof(fmt_cmd_buf)), count);
+    printf("%.4X | %.2X | Start  | %s [Count = %u]", dev->num, dev->addr, chan_fmt_cmd(cmd, fmt_cmd_buf, sizeof(fmt_cmd_buf)), count);
 
-    int start_result = chan_out_start(&chan->out, dev_addr, cmd, flags, data, count);
+    int start_result = chan_out_start(&dev->chan->out, dev->addr, cmd, flags, data, count);
 
     if (start_result == -1) {
         printf("\nchan_out_start error: %d\n", start_result);
@@ -446,21 +568,25 @@ bool handle_start_msg(struct client *client, uint8_t *msg, size_t msg_len, struc
         return false;
     }
 
-    chan->solicited = true;
-    chan->cmd = cmd;
-    chan->count = count;
+    dev->solicited = true;
+    dev->cmd = cmd;
+    dev->count = count;
 
     return true;
 }
 
-bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_addr, uint8_t status)
+bool handle_dev_status(struct dev *dev, uint8_t status)
 {
-    bool solicited = chan->solicited;
+    assert(dev->client != NULL);
+
+    int sock = dev->client->sock;
+
+    bool solicited = dev->solicited;
 
     char fmt_status_buf[CHAN_FMT_STATUS_BUF_SIZE];
 
-    if (solicited && chan->count > 0 && (status & CHAN_STATUS_CE)) {
-        ssize_t result = chan_out_complete(&chan->out, chan->cmd, chan->recv_buf, chan->count);
+    if (solicited && dev->count > 0 && (status & CHAN_STATUS_CE)) {
+        ssize_t result = chan_out_complete(&dev->chan->out, dev->cmd, dev->chan->recv_buf, dev->count);
 
         if (result < 0) {
             printf("chan_out_complete error: %zd\n", result);
@@ -468,16 +594,16 @@ bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_add
         }
 
         size_t transfer_count = result;
-        size_t residual_count = chan->count - transfer_count;
+        size_t residual_count = dev->count - transfer_count;
 
-        printf("%.2X | Data   | [Transfer = %zu] [Count = %zu] [Residual = %zu]\n", dev_addr, transfer_count, chan->count, residual_count);
+        printf("%.4X | %.2X | Data   | [Transfer = %zu] [Count = %zu] [Residual = %zu]\n", dev->num, dev->addr, transfer_count, dev->count, residual_count);
 
-        bool is_send_cmd = chan->cmd & 0x01;
+        bool is_send_cmd = dev->cmd & 0x01;
 
         if (is_send_cmd) {
-            cxip_send_count(client->sock, dev_addr, transfer_count);
+            cxip_send_count(sock, dev->num, transfer_count);
         } else {
-            cxip_send_data(client->sock, dev_addr, chan->recv_buf, transfer_count);
+            cxip_send_data(sock, dev->num, dev->chan->recv_buf, transfer_count);
         }
     }
 
@@ -485,34 +611,46 @@ bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_add
     // combinations should indicate the command was not accepted or has been
     // completed.
     if (solicited && status != CHAN_STATUS_CE) {
-        chan->solicited = false;
+        dev->solicited = false;
     }
 
-    printf("%.2X | Status | %s %s\n", dev_addr, chan_fmt_status(status, fmt_status_buf, sizeof(fmt_status_buf)), solicited ? "[Solicited]" : "");
+    printf("%.4X | %.2X | Status | %s %s\n", dev->num, dev->addr, chan_fmt_status(status, fmt_status_buf, sizeof(fmt_status_buf)), solicited ? "[Solicited]" : "");
 
-    return cxip_send_status(client->sock, dev_addr, status, solicited);
+    return cxip_send_status(sock, dev->num, status, solicited);
 }
 
-bool init_client(struct client *client, struct chan *chan)
+struct dev *find_dev(struct state *state, int num)
 {
-    client->sock = -1;
-
-    client->msg_buf_size = MSG_BUF_SIZE(chan->out.udmabuf.size);
-
-    if ((client->msg_buf = malloc(client->msg_buf_size)) == NULL) {
-        perror("malloc");
-        return false;
+    if (state->dev != NULL && state->dev->num == num) {
+        return state->dev;
     }
 
-    client->msg_buf_len = 0;
-
-    client->dev_addr = -1;
-
-    return true;
+    return NULL;
 }
 
-bool close_client(struct client *client, struct chan *chan)
+struct client *find_client(struct state *state, int sock)
 {
+    for (size_t index = 0; index < CLIENTS_MAX; index++) {
+        struct client *client = &state->clients[index];
+
+        if (client->sock == sock) {
+            return client;
+        }
+    }
+
+    return NULL;
+}
+
+bool close_client(struct client *client, struct state *state)
+{
+    if (state->dev != NULL && state->dev->client == client) {
+        struct dev *dev = state->dev;
+
+        chan_out_config(&dev->chan->out, dev->addr, false);
+
+        dev->client = NULL;
+    }
+
     if (client->sock != -1) {
         close(client->sock);
 
@@ -525,11 +663,59 @@ bool close_client(struct client *client, struct chan *chan)
         client->msg_buf = NULL;
     }
 
-    if (client->dev_addr != -1) {
-        chan_out_config(&chan->out, client->dev_addr, false);
+    return true;
+}
 
-        client->dev_addr = -1;
+void usage(char *cmd)
+{
+    printf("Usage: %s [-lm] nnnn[:aa]\n", cmd);
+}
+
+bool parse_dev_config(char *config, uint16_t *num, uint8_t *addr)
+{
+    if (config == NULL) {
+        return false;
     }
 
-    return init_client(client, chan);
+    char *token;
+    char *rest = config;
+
+    if ((token = strtok_r(rest, ":", &rest)) == NULL) {
+        return false;
+    }
+
+    for (int element = 0; element < 2; element++) {
+        for (size_t index = 0; index < strlen(token); index++) {
+            if (!(isxdigit(token[index]) || isblank(token[index]))) {
+                return false;
+            }
+        }
+
+        char *end;
+
+        errno = 0;
+
+        unsigned long value = strtol(token, &end, 16);
+
+        if (errno != 0 || *end != '\0') {
+            return false;
+        }
+
+        if (element == 0 && value <= 0xffff) {
+            *num = (uint16_t) value;
+            *addr = (uint8_t) (value & 0xff);
+        } else if (element == 1 && value <= 0xff) {
+            *addr = (uint8_t) (value & 0xff);
+        } else {
+            return false;
+        }
+
+        if (strlen(rest) == 0) {
+            break;
+        }
+
+        token = rest;
+    }
+
+    return true;
 }

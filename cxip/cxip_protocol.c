@@ -57,66 +57,69 @@ bool cxip_decode_ack(uint8_t *msg, size_t msg_len)
     return (msg_len == 1 && (enum cxip_msg_type) msg[0] == ACK);
 }
 
-bool cxip_send_open(int sock, uint8_t dev_addr)
+bool cxip_send_open(int sock, uint16_t dev_num)
 {
-    uint8_t msg[2];
+    uint8_t msg[3];
 
     msg[0] = (enum cxip_msg_type) OPEN;
-    msg[1] = dev_addr;
+    msg[1] = (dev_num & 0xff00) >> 8;
+    msg[2] = dev_num & 0x00ff;
 
     return send_msg(sock, msg, sizeof(msg), NULL, 0);
 }
 
-bool cxip_decode_open(uint8_t *msg, size_t msg_len, uint8_t *dev_addr)
+bool cxip_decode_open(uint8_t *msg, size_t msg_len, uint16_t *dev_num)
 {
-    if (msg_len != 2 || (enum cxip_msg_type) msg[0] != OPEN) {
+    if (msg_len != 3 || (enum cxip_msg_type) msg[0] != OPEN) {
         return false;
     }
 
-    if (dev_addr != NULL) {
-        *dev_addr = msg[1];
+    if (dev_num != NULL) {
+        *dev_num = (msg[1] << 8) | msg[2];
     }
 
     return true;
 }
 
-bool cxip_send_close(int sock, uint8_t dev_addr)
+bool cxip_send_close(int sock, uint16_t dev_num)
 {
-    uint8_t msg[2];
+    uint8_t msg[3];
 
     msg[0] = (enum cxip_msg_type) CLOSE;
-    msg[1] = dev_addr;
+    msg[1] = (dev_num & 0xff00) >> 8;
+    msg[2] = dev_num & 0x00ff;
 
     return send_msg(sock, msg, sizeof(msg), NULL, 0);
 }
 
-bool cxip_decode_close(uint8_t *msg, size_t msg_len, uint8_t *dev_addr)
+bool cxip_decode_close(uint8_t *msg, size_t msg_len, uint16_t *dev_num)
 {
-    if (msg_len != 2 || (enum cxip_msg_type) msg[0] != CLOSE) {
+    if (msg_len != 3 || (enum cxip_msg_type) msg[0] != CLOSE) {
         return false;
     }
 
-    if (dev_addr != NULL) {
-        *dev_addr = msg[1];
+    if (dev_num != NULL) {
+        *dev_num = (msg[1] << 8) | msg[2];
     }
 
     return true;
 }
 
-bool cxip_send_start(int sock, uint8_t dev_addr, uint8_t cmd, uint8_t flags, void *data, uint16_t count)
+bool cxip_send_start(int sock, uint16_t dev_num, uint8_t cmd, uint8_t flags, void *data, uint16_t count)
 {
-    uint8_t msg[6];
+    uint8_t msg[7];
 
     msg[0] = (enum cxip_msg_type) START;
-    msg[1] = dev_addr;
-    msg[2] = cmd;
-    msg[3] = flags;
+    msg[1] = (dev_num & 0xff00) >> 8;
+    msg[2] = dev_num & 0x00ff;
+    msg[3] = cmd;
+    msg[4] = flags;
 
-    size_t msg_len = 4;
+    size_t msg_len = 5;
 
     if (data == NULL) {
-        msg[4] = (count & 0xff00) >> 8;
-        msg[5] = count & 0x00ff;
+        msg[5] = (count & 0xff00) >> 8;
+        msg[6] = count & 0x00ff;
 
         msg_len += 2;
     }
@@ -124,76 +127,77 @@ bool cxip_send_start(int sock, uint8_t dev_addr, uint8_t cmd, uint8_t flags, voi
     return send_msg(sock, msg, msg_len, data, data != NULL ? count : 0);
 }
 
-bool cxip_decode_start(uint8_t *msg, size_t msg_len, uint8_t *dev_addr, uint8_t *cmd, uint8_t *flags, void **data, uint16_t *count)
+bool cxip_decode_start(uint8_t *msg, size_t msg_len, uint16_t *dev_num, uint8_t *cmd, uint8_t *flags, void **data, uint16_t *count)
 {
-    if (msg_len < 4 || (enum cxip_msg_type) msg[0] != START) {
+    if (msg_len < 5 || (enum cxip_msg_type) msg[0] != START) {
         return false;
     }
 
     // Determine if the command will result in data being sent to the device.
-    bool is_send_cmd = msg[2] & 0x01;
+    bool is_send_cmd = msg[3] & 0x01;
 
-    if (!is_send_cmd && msg_len < 6) {
+    if (!is_send_cmd && msg_len < 7) {
         return false;
     }
 
-    if (dev_addr != NULL) {
-        *dev_addr = msg[1];
+    if (dev_num != NULL) {
+        *dev_num = (msg[1] << 8) | msg[2];
     }
 
     if (cmd != NULL) {
-        *cmd = msg[2];
+        *cmd = msg[3];
     }
 
     if (flags != NULL) {
-        *flags = msg[3];
+        *flags = msg[4];
     }
 
     if (is_send_cmd) {
         if (data != NULL) {
-            *data = &msg[4];
+            *data = &msg[5];
         }
 
         if (count != NULL) {
-            *count = msg_len - 4;
+            *count = msg_len - 5;
         }
     } else {
         if (count != NULL) {
-            *count = (msg[4] << 8) | msg[5];
+            *count = (msg[5] << 8) | msg[6];
         }
     }
 
     return true;
 }
 
-bool cxip_send_status(int sock, uint8_t dev_addr, uint8_t status, bool solicited)
+bool cxip_send_status(int sock, uint16_t dev_num, uint8_t status, bool solicited)
 {
-    uint8_t msg[4];
+    uint8_t msg[5];
 
     msg[0] = (enum cxip_msg_type) STATUS;
-    msg[1] = dev_addr;
-    msg[2] = status;
-    msg[3] = solicited;
+    msg[1] = (dev_num & 0xff00) >> 8;
+    msg[2] = dev_num & 0x00ff;
+    msg[3] = status;
+    msg[4] = solicited;
 
     return send_msg(sock, msg, sizeof(msg), NULL, 0);
 }
 
-bool cxip_decode_status(uint8_t *msg, size_t msg_len, uint8_t *dev_addr, uint8_t *status, bool *solicited)
+bool cxip_decode_status(uint8_t *msg, size_t msg_len, uint16_t *dev_num, uint8_t *status, bool *solicited)
 {
-    if (msg_len != 4 || (enum cxip_msg_type) msg[0] != STATUS) {
+    if (msg_len != 5 || (enum cxip_msg_type) msg[0] != STATUS) {
         return false;
     }
 
-    if (dev_addr != NULL) {
-        *dev_addr = msg[1];
+    if (dev_num != NULL) {
+        *dev_num = (msg[1] << 8) | msg[2];
     }
 
     if (status != NULL) {
-        *status = msg[2];
+        *status = msg[3];
     }
 
     // cppcheck-suppress variableScope
-    uint8_t flags = msg[3];
+    uint8_t flags = msg[4];
 
     if (solicited != NULL) {
         *solicited = flags & 0x01;
@@ -202,61 +206,63 @@ bool cxip_decode_status(uint8_t *msg, size_t msg_len, uint8_t *dev_addr, uint8_t
     return true;
 }
 
-bool cxip_send_data(int sock, uint8_t dev_addr, void *data, uint16_t count)
+bool cxip_send_data(int sock, uint16_t dev_num, void *data, uint16_t count)
 {
-    uint8_t msg[2];
+    uint8_t msg[3];
 
     msg[0] = (enum cxip_msg_type) DATA;
-    msg[1] = dev_addr;
+    msg[1] = (dev_num & 0xff00) >> 8;
+    msg[2] = dev_num & 0x00ff;
 
     return send_msg(sock, msg, sizeof(msg), data, count);
 }
 
-bool cxip_decode_data(uint8_t *msg, size_t msg_len, uint8_t *dev_addr, void **data, uint16_t *count)
+bool cxip_decode_data(uint8_t *msg, size_t msg_len, uint16_t *dev_num, void **data, uint16_t *count)
 {
-    if (msg_len < 2 || (enum cxip_msg_type) msg[0] != DATA) {
+    if (msg_len < 3 || (enum cxip_msg_type) msg[0] != DATA) {
         return false;
     }
 
-    if (dev_addr != NULL) {
-        *dev_addr = msg[1];
+    if (dev_num != NULL) {
+        *dev_num = (msg[1] << 8) | msg[2];
     }
 
     if (data != NULL) {
-        *data = &msg[2];
+        *data = &msg[3];
     }
 
     if (count != NULL) {
-        *count = msg_len - 2;
+        *count = msg_len - 3;
     }
 
     return true;
 }
 
-bool cxip_send_count(int sock, uint8_t dev_addr, uint16_t count)
+bool cxip_send_count(int sock, uint16_t dev_num, uint16_t count)
 {
-    uint8_t msg[4];
+    uint8_t msg[5];
 
     msg[0] = (enum cxip_msg_type) COUNT;
-    msg[1] = dev_addr;
-    msg[2] = (count & 0xff00) >> 8;
-    msg[3] = count & 0x00ff;
+    msg[1] = (dev_num & 0xff00) >> 8;
+    msg[2] = dev_num & 0x00ff;
+    msg[3] = (count & 0xff00) >> 8;
+    msg[4] = count & 0x00ff;
 
     return send_msg(sock, msg, sizeof(msg), NULL, 0);
 }
 
-bool cxip_decode_count(uint8_t *msg, size_t msg_len, uint8_t *dev_addr, uint16_t *count)
+bool cxip_decode_count(uint8_t *msg, size_t msg_len, uint16_t *dev_num, uint16_t *count)
 {
-    if (msg_len != 4 || (enum cxip_msg_type) msg[0] != COUNT) {
+    if (msg_len != 5 || (enum cxip_msg_type) msg[0] != COUNT) {
         return false;
     }
 
-    if (dev_addr != NULL) {
-        *dev_addr = msg[1];
+    if (dev_num != NULL) {
+        *dev_num = (msg[1] << 8) | msg[2];
     }
 
     if (count != NULL) {
-        *count = (msg[2] << 8) | msg[3];
+        *count = (msg[3] << 8) | msg[4];
     }
 
     return true;

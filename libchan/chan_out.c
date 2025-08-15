@@ -140,7 +140,7 @@ int chan_out_start(struct chan_out *out, uint8_t addr, uint8_t cmd, uint8_t flag
     }
 
     // TODO: This would not apply if a skip flag is implemented.
-    if (count > 0 && buf == NULL) {
+    if (CHAN_OUT_IS_SEND_CMD(cmd) && count > 0 && buf == NULL) {
         return CHAN_ERR_ARGS;
     }
 
@@ -207,7 +207,7 @@ ssize_t chan_out_complete(struct chan_out *out, uint8_t cmd, void *buf, size_t c
     }
 
     // TODO: This would not apply if a skip flag is implemented.
-    if (count > 0 && buf == NULL) {
+    if (CHAN_OUT_IS_RECV_CMD(cmd) && count > 0 && buf == NULL) {
         return CHAN_ERR_ARGS;
     }
 

@@ -6,7 +6,7 @@
 
 #define CXIP_HOST "10.83.5.62"
 #define CXIP_PORT 3174
-#define CXIP_DEV_NUM 0x60 // 3174-1L
+#define CXIP_DEV_NUM 0x0060 // 3174-1L
 
 #define MSG_BUF_SIZE 16000
 
@@ -19,7 +19,7 @@
 #endif
 
 struct cxip {
-    uint8_t dev_addr;
+    uint16_t dev_num;
     int sock;
     TID tid;
     uint8_t msg_buf[MSG_BUF_SIZE];
@@ -47,10 +47,10 @@ static int cxip_init_handler(DEVBLK *dev, int argc, char **argv)
 
     struct cxip *cxip = (struct cxip *) dev->dev_data;
 
-    cxip->dev_addr = dev->devnum;
+    cxip->dev_num = dev->devnum;
     cxip->sock = -1;
 
-    cxip->dev_addr = CXIP_DEV_NUM;
+    cxip->dev_num = CXIP_DEV_NUM;
 
     if ((cxip->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         goto error;
@@ -85,7 +85,7 @@ static int cxip_init_handler(DEVBLK *dev, int argc, char **argv)
 
     // Need to delay opening the device until the worker thread has been
     // started.
-    if (!cxip_send_open(cxip->sock, cxip->dev_addr)) {
+    if (!cxip_send_open(cxip->sock, cxip->dev_num)) {
         CXIP_LOG("ERROR: Unable to send open message\n");
         goto error;
     }
@@ -188,7 +188,7 @@ static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U
 
     bool is_send_cmd = code & 0x01;
 
-    if (!cxip_send_start(cxip->sock, cxip->dev_addr, code, 0, is_send_cmd ? iobuf : NULL, count)) {
+    if (!cxip_send_start(cxip->sock, cxip->dev_num, code, 0, is_send_cmd ? iobuf : NULL, count)) {
         CXIP_LOG("ERROR: Unable to send start message\n");
         goto error;
     }
@@ -244,19 +244,19 @@ static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U
             goto error;
         }
 
-        uint8_t dev_addr;
+        uint16_t dev_num;
         void *data;
         uint8_t status;
         bool solicited;
 
-        if (is_send_cmd && cxip_decode_count(msg, msg_len, &dev_addr, &transfer_count)) {
-            ASSERT(dev_addr == cxip->dev_addr);
-        } else if (!is_send_cmd && cxip_decode_data(msg, msg_len, &dev_addr, &data, &transfer_count)) {
-            ASSERT(dev_addr == cxip->dev_addr);
+        if (is_send_cmd && cxip_decode_count(msg, msg_len, &dev_num, &transfer_count)) {
+            ASSERT(dev_num == cxip->dev_num);
+        } else if (!is_send_cmd && cxip_decode_data(msg, msg_len, &dev_num, &data, &transfer_count)) {
+            ASSERT(dev_num == cxip->dev_num);
 
             memcpy(iobuf, data, transfer_count);
-        } else if (cxip_decode_status(msg, msg_len, &dev_addr, &status, &solicited)) {
-            ASSERT(dev_addr == cxip->dev_addr);
+        } else if (cxip_decode_status(msg, msg_len, &dev_num, &status, &solicited)) {
+            ASSERT(dev_num == cxip->dev_num);
             ASSERT(solicited);
 
             cumulative_status |= status;
@@ -400,11 +400,13 @@ void *cxip_worker(void *arg)
 
             CXIP_LOG_TRACE("[Worker] Have complete %zu byte message (type = %.2x)\n", msg_len, msg[0]);
 
-            uint8_t dev_addr;
+            uint16_t dev_num;
             uint8_t status;
             bool solicited;
 
-            if (cxip_decode_status(msg, msg_len, &dev_addr, &status, &solicited) && !solicited) {
+            if (cxip_decode_status(msg, msg_len, &dev_num, &status, &solicited) && !solicited) {
+                ASSERT(dev_num == cxip->dev_num);
+
                 CXIP_LOG("[Worker] Unsolicited status %.2X\n", status);
 
                 int result = device_attention(dev, status);

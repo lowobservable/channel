@@ -13,19 +13,19 @@ CMD_EW = 0x05 # Erase / Write
 CMD_RM = 0x06 # Read Modified
 
 def main():
-    addr = 0x60
+    dev_num = 0x0060
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.connect(('ebaz1', 3174))
 
-        cxip_open(sock, addr)
+        cxip_open(sock, dev_num)
 
         print('NOP...')
 
         status = None
 
         try:
-            (status, _) = cxip_exec(sock, addr, CMD_NOP)
+            (status, _) = cxip_exec(sock, dev_num, CMD_NOP)
         except CxipError as error:
             if error.num == 5:
                 pass
@@ -33,7 +33,7 @@ def main():
                 raise
 
         if status is None:
-            print(f'Device {addr:02x} is not operational, waiting...')
+            print(f'Device {dev_num:04X} is not operational, waiting...')
 
             (_, status, solicited) = wait_for_status(sock)
 
@@ -41,7 +41,7 @@ def main():
 
         print('SENSE ID...')
 
-        (status, data) = cxip_exec(sock, addr, CMD_SENSE_ID, 7)
+        (status, data) = cxip_exec(sock, dev_num, CMD_SENSE_ID, 7)
 
         print(f'\tstatus = {status!r}')
         print('\tdata = ' + ' '.join(['{0:02x}'.format(x) for x in data]))
@@ -57,7 +57,7 @@ def main():
 
             print('ERASE/WRITE...')
 
-            (status, _) = cxip_exec(sock, addr, CMD_EW, screen)
+            (status, _) = cxip_exec(sock, dev_num, CMD_EW, screen)
 
             print(f'\tstatus = {status!r}')
 
@@ -67,7 +67,7 @@ def main():
                 print('ATTN!')
                 print('READ MODIFIED...')
 
-                (status, data) = cxip_exec(sock, addr, CMD_RM, 64)
+                (status, data) = cxip_exec(sock, dev_num, CMD_RM, 64)
 
                 print(f'\tstatus = {status!r}')
                 print('\tdata = ' + ' '.join(['{0:02x}'.format(x) for x in data]))
@@ -132,15 +132,15 @@ class CxipError(Exception):
 
         self.num = num
 
-def cxip_open(sock, addr):
-    send_msg(sock, struct.pack('BB', CxipMsgType.OPEN, addr))
+def cxip_open(sock, dev_num):
+    send_msg(sock, struct.pack('!BH', CxipMsgType.OPEN, dev_num))
 
     msg = recv_msg(sock)
 
     if msg[0] != CxipMsgType.ACK:
         raise Exception('Expected ACK response')
 
-def cxip_exec(sock, addr, cmd, data_or_count=None):
+def cxip_exec(sock, dev_num, cmd, data_or_count=None):
     flags = 0
 
     is_send_cmd = bool(cmd & 0x01)
@@ -153,11 +153,11 @@ def cxip_exec(sock, addr, cmd, data_or_count=None):
             data = bytes(data_or_count)
             count = len(data)
 
-        msg = struct.pack('!BBBB', CxipMsgType.START, addr, cmd, flags) + data
+        msg = struct.pack('!BHBB', CxipMsgType.START, dev_num, cmd, flags) + data
     else:
         count = int(data_or_count)
 
-        msg = struct.pack('!BBBBH', CxipMsgType.START, addr, cmd, flags, count)
+        msg = struct.pack('!BHBBH', CxipMsgType.START, dev_num, cmd, flags, count)
 
     send_msg(sock, msg)
 
@@ -173,12 +173,12 @@ def cxip_exec(sock, addr, cmd, data_or_count=None):
         msg = recv_msg(sock)
 
         if is_send_cmd and msg[0] == CxipMsgType.COUNT:
-            (count,) = struct.unpack('!H', msg[2:])
+            (_, count) = struct.unpack('!HH', msg[1:])
         elif not is_send_cmd and msg[0] == CxipMsgType.DATA:
-            data = msg[2:]
+            data = msg[3:]
             count = len(data)
         elif msg[0] == CxipMsgType.STATUS:
-            (_, status, status_flags) = struct.unpack('BBB', msg[1:])
+            (_, status, status_flags) = struct.unpack('!HBB', msg[1:])
 
             status = ChanStatus(status)
             solicited = bool(status_flags)
@@ -204,12 +204,12 @@ def wait_for_status(sock):
     if msg[0] != CxipMsgType.STATUS:
         raise Exception('Expected STATUS response')
 
-    (addr, status, flags) = struct.unpack('BBB', msg[1:])
+    (dev_num, status, flags) = struct.unpack('!HBB', msg[1:])
 
     status = ChanStatus(status)
     solicited = bool(flags)
 
-    return (addr, status, solicited)
+    return (dev_num, status, solicited)
 
 def send_msg(sock, msg):
     sock.sendall(struct.pack('!BH', 0, len(msg)) + msg)
