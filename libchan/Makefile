@@ -1,4 +1,4 @@
-CFLAGS = -Wall -I../libhack
+CFLAGS = -Wall -W -I../libhack
 
 all: libchan.a test_mock
 

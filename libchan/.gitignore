@@ -1,6 +1,4 @@
 *.o
 *.a
 
-test_3174
 test_mock
-test_wrap

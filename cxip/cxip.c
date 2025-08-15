@@ -20,14 +20,7 @@
 #include <chan.h>
 #include <mock_cu.h>
 
-#define MSG_TYPE_ACK 0x00
-#define MSG_TYPE_PING 0x01
-#define MSG_TYPE_OPEN 0x02
-#define MSG_TYPE_CLOSE 0x03
-#define MSG_TYPE_START 0x04
-#define MSG_TYPE_STATUS 0x05
-#define MSG_TYPE_DATA 0x06
-#define MSG_TYPE_ERROR 0xff
+#include <cxip_protocol.h>
 
 struct chan {
     struct chan_out out;
@@ -45,28 +38,20 @@ struct client {
     uint8_t *msg_buf;
     size_t msg_buf_size;
     size_t msg_buf_len;
-    uint8_t *msg;
-    size_t msg_len;
     int dev_addr;
 };
 
 static bool serve(int listen_sock, struct chan *chan);
 
 static bool handle_connect(struct client *client, struct chan *chan);
-static bool handle_disconnect(struct client *client, struct chan *chan);
-static bool handle_msg(struct client *client, uint8_t *msg, size_t len, struct chan *chan);
-static bool handle_start_msg(struct client *client, uint8_t *msg, size_t len, struct chan *chan);
+static bool handle_client_data(struct client *client);
+static void discard_msg(struct client *client, size_t msg_len);
+static bool handle_msg(struct client *client, uint8_t *msg, size_t msg_len, struct chan *chan);
+static bool handle_start_msg(struct client *client, uint8_t *msg, size_t msg_len, struct chan *chan);
 static bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_addr, uint8_t status);
 
 static bool init_client(struct client *client, struct chan *chan);
 static bool close_client(struct client *client, struct chan *chan);
-static bool recv_all(struct client *client);
-static ssize_t get_msg(struct client *client, uint8_t **msg);
-static bool send_msg(struct client *client, void *msg, size_t len);
-static bool send_ack_msg(struct client *client);
-static bool send_error_msg(struct client *client, uint8_t num, char *text);
-static bool send_status_msg(struct client *client, uint8_t dev_addr, uint8_t status, bool solicited);
-static bool send_data_msg(struct client *client, uint8_t dev_addr, void *data, size_t count);
 
 int main(int argc, char **argv)
 {
@@ -271,7 +256,7 @@ bool serve(int listen_sock, struct chan *chan)
             } else if (event.events & EPOLLIN) {
                 assert(event.data.fd == client.sock);
 
-                if (!recv_all(&client)) {
+                if (!handle_client_data(&client)) {
                     if (!close_client(&client, chan)) {
                         return false;
                     }
@@ -281,9 +266,7 @@ bool serve(int listen_sock, struct chan *chan)
             if (event.events & (EPOLLRDHUP | EPOLLHUP)) {
                 assert(event.data.fd == client.sock);
 
-                if (!handle_disconnect(&client, chan)) {
-                    return false;
-                }
+                printf("Client %s disconnected\n", client.name);
 
                 if (!close_client(&client, chan)) {
                     return false;
@@ -292,20 +275,24 @@ bool serve(int listen_sock, struct chan *chan)
         }
 
         if (client.sock != -1) {
-            uint8_t *buf;
+            uint8_t *msg;
 
-            ssize_t msg_result = get_msg(&client, &buf);
+            ssize_t msg_len = cxip_decode_msg(client.msg_buf, client.msg_buf_len, &msg);
 
-            if (msg_result < 0) {
+            if (msg_len < 0) {
+                printf("ERROR: Invalid message\n");
+
                 if (!close_client(&client, chan)) {
                     return false;
                 }
             }
 
-            if (msg_result > 0) {
-                if (!handle_msg(&client, buf, msg_result, chan)) {
+            if (msg_len > 0) {
+                if (!handle_msg(&client, msg, msg_len, chan)) {
                     return false;
                 }
+
+                discard_msg(&client, msg_len);
             }
         }
 
@@ -345,46 +332,50 @@ bool handle_connect(struct client *client, struct chan *chan)
     return true;
 }
 
-bool handle_disconnect(struct client *client, struct chan *chan)
+bool handle_client_data(struct client *client)
 {
-    printf("Client %s disconnected\n", client->name);
+    size_t remaining = client->msg_buf_size - client->msg_buf_len;
 
-    if (client->dev_addr != -1) {
-        chan_out_config(&chan->out, client->dev_addr, false);
+    while (remaining > 0) {
+        uint8_t *buf = client->msg_buf + client->msg_buf_len;
 
-        client->dev_addr = -1;
+        ssize_t result = read(client->sock, buf, remaining);
+
+        if (result == 0 || (result == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
+            break;
+        }
+
+        if (result < 0) {
+            perror("read");
+            return false;
+        }
+
+        client->msg_buf_len += result;
+        remaining -= result;
     }
 
     return true;
 }
 
-bool handle_msg(struct client *client, uint8_t *msg, size_t len, struct chan *chan)
+void discard_msg(struct client *client, size_t msg_len)
 {
-    if (len < 1) {
-        printf("ERROR: Invalid message length: %zu\n", len);
-        return close_client(client, chan);
+    client->msg_buf_len -= 3 + msg_len;
+
+    if (client->msg_buf_len > 0) {
+        memmove(client->msg_buf, client->msg_buf + 3 + msg_len, client->msg_buf_len);
     }
+}
 
-    uint8_t msg_type = msg[0];
+bool handle_msg(struct client *client, uint8_t *msg, size_t msg_len, struct chan *chan)
+{
+    uint8_t dev_addr;
 
-    if (msg_type == MSG_TYPE_PING) {
-        if (len != 1) {
-            printf("ERROR: Invalid PING message length: %zu\n", len);
-            return close_client(client, chan);
-        }
-
-        return send_ack_msg(client);
-    } else if (msg_type == MSG_TYPE_OPEN) {
-        if (len != 2) {
-            printf("ERROR: Invalid OPEN message length: %zu\n", len);
-            return close_client(client, chan);
-        }
-
-        uint8_t dev_addr = msg[1];
-
+    if (cxip_decode_start(msg, msg_len, NULL, NULL, NULL, NULL, NULL)) {
+        return handle_start_msg(client, msg, msg_len, chan);
+    } else if (cxip_decode_open(msg, msg_len, &dev_addr)) {
         if (client->dev_addr == dev_addr) {
             printf("WARN: Device %.2X already open\n", dev_addr);
-            return send_error_msg(client, 0, "Device already open");
+            return cxip_send_error(client->sock, 0, "Device already open");
         }
 
         chan_out_config(&chan->out, dev_addr, true);
@@ -393,18 +384,11 @@ bool handle_msg(struct client *client, uint8_t *msg, size_t len, struct chan *ch
 
         client->dev_addr = dev_addr;
 
-        return send_ack_msg(client);
-    } else if (msg_type == MSG_TYPE_CLOSE) {
-        if (len != 2) {
-            printf("ERROR: Invalid CLOSE message length: %zu\n", len);
-            return close_client(client, chan);
-        }
-
-        uint8_t dev_addr = msg[1];
-
+        return cxip_send_ack(client->sock);
+    } else if (cxip_decode_close(msg, msg_len, &dev_addr)) {
         if (client->dev_addr != dev_addr) {
             printf("WARN: Device %.2X not open\n", dev_addr);
-            return send_error_msg(client, 0, "Device not open");
+            return cxip_send_error(client->sock, 0, "Device not open");
         }
 
         chan_out_config(&chan->out, dev_addr, false);
@@ -413,56 +397,38 @@ bool handle_msg(struct client *client, uint8_t *msg, size_t len, struct chan *ch
 
         client->dev_addr = -1;
 
-        return send_ack_msg(client);
-    } else if (msg_type == MSG_TYPE_START) {
-        return handle_start_msg(client, msg, len, chan);
+        return cxip_send_ack(client->sock);
     } else {
-        printf("ERROR: Unsupported message type: %d\n", msg_type);
+        printf("ERROR: Invalid message\n");
         return close_client(client, chan);
     }
 
     return true;
 }
 
-bool handle_start_msg(struct client *client, uint8_t *msg, size_t len, struct chan *chan)
+bool handle_start_msg(struct client *client, uint8_t *msg, size_t msg_len, struct chan *chan)
 {
-    if (len < 4) {
-        printf("ERROR: Invalid START message length: %zu\n", len);
-        return close_client(client, chan);
-    }
-
-    uint8_t dev_addr = msg[1];
-
-    if (client->dev_addr != dev_addr) {
-        printf("WARN: Device %.2X not open\n", dev_addr);
-        return send_error_msg(client, 0, "Device not open");
-    }
-
-    uint8_t cmd = msg[2];
-    uint8_t flags = msg[3];
-
-    // Determine if the command will result in data being sent to the device.
-    bool is_send_cmd = cmd & 0x01;
-
+    uint8_t dev_addr;
+    uint8_t cmd;
+    uint8_t flags;
     void *data;
-    size_t count;
+    uint16_t count;
 
-    if (is_send_cmd) {
-        data = &msg[4];
-        count = len - 4;
-    } else {
-        if (len < 6) {
-            printf("ERROR: Invalid START message length: %zu\n", len);
-            return close_client(client, chan);
-        }
+    if (!cxip_decode_start(msg, msg_len, &dev_addr, &cmd, &flags, &data, &count)) {
+        return false;
+    }
 
+    // Determine if the command will result in data being received from the
+    // device.
+    bool is_recv_cmd = !(cmd & 0x01);
+
+    if (is_recv_cmd) {
         data = chan->recv_buf;
-        count = (msg[4] << 8) | msg[5];
     }
 
     char fmt_cmd_buf[CHAN_FMT_CMD_BUF_SIZE];
 
-    printf("%.2X | Start  | %s [Count = %zu]", dev_addr, chan_fmt_cmd(cmd, fmt_cmd_buf, sizeof(fmt_cmd_buf)), count);
+    printf("%.2X | Start  | %s [Count = %u]", dev_addr, chan_fmt_cmd(cmd, fmt_cmd_buf, sizeof(fmt_cmd_buf)), count);
 
     int start_result = chan_out_start(&chan->out, dev_addr, cmd, flags, data, count);
 
@@ -471,10 +437,14 @@ bool handle_start_msg(struct client *client, uint8_t *msg, size_t len, struct ch
         return false;
     } else if (start_result < -1) {
         printf(" [Error %d]\n", start_result);
-        return send_error_msg(client, start_result * (-1), "Start error");
+        return cxip_send_error(client->sock, start_result * (-1), "Start error");
     }
 
     printf("\n");
+
+    if (!cxip_send_ack(client->sock)) {
+        return false;
+    }
 
     chan->solicited = true;
     chan->cmd = cmd;
@@ -497,16 +467,17 @@ bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_add
             return false;
         }
 
-        size_t residual_count = chan->count - result;
+        size_t transfer_count = result;
+        size_t residual_count = chan->count - transfer_count;
 
-        printf("%.2X | Data   | [Transfer = %zd] [Count = %zu] [Residual = %zu]\n", dev_addr, result, chan->count, residual_count);
+        printf("%.2X | Data   | [Transfer = %zu] [Count = %zu] [Residual = %zu]\n", dev_addr, transfer_count, chan->count, residual_count);
 
         bool is_send_cmd = chan->cmd & 0x01;
 
         if (is_send_cmd) {
-            send_data_msg(client, dev_addr, NULL, result);
+            cxip_send_count(client->sock, dev_addr, transfer_count);
         } else {
-            send_data_msg(client, dev_addr, chan->recv_buf, result);
+            cxip_send_data(client->sock, dev_addr, chan->recv_buf, transfer_count);
         }
     }
 
@@ -519,7 +490,7 @@ bool handle_dev_status(struct client *client, struct chan *chan, uint8_t dev_add
 
     printf("%.2X | Status | %s %s\n", dev_addr, chan_fmt_status(status, fmt_status_buf, sizeof(fmt_status_buf)), solicited ? "[Solicited]" : "");
 
-    return send_status_msg(client, dev_addr, status, solicited);
+    return cxip_send_status(client->sock, dev_addr, status, solicited);
 }
 
 bool init_client(struct client *client, struct chan *chan)
@@ -534,9 +505,6 @@ bool init_client(struct client *client, struct chan *chan)
     }
 
     client->msg_buf_len = 0;
-
-    client->msg = NULL;
-    client->msg_len = 0;
 
     client->dev_addr = -1;
 
@@ -564,165 +532,4 @@ bool close_client(struct client *client, struct chan *chan)
     }
 
     return init_client(client, chan);
-}
-
-bool recv_all(struct client *client)
-{
-    uint8_t *p = client->msg_buf + client->msg_buf_len;
-
-    size_t remaining = client->msg_buf_size - client->msg_buf_len;
-
-    while (remaining > 0) {
-        ssize_t result = read(client->sock, p, remaining);
-
-        if (result == 0 || (result == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
-            break;
-        }
-
-        if (result < 0) {
-            perror("read");
-            return false;
-        }
-
-        client->msg_buf_len += result;
-        remaining -= result;
-    }
-
-    return true;
-}
-
-ssize_t get_msg(struct client *client, uint8_t **msg)
-{
-    // Drop previous message.
-    if (client->msg != NULL) {
-        client->msg_buf_len -= 3 + client->msg_len;
-
-        if (client->msg_buf_len > 0) {
-            memmove(client->msg_buf, client->msg_buf + 3 + client->msg_len, client->msg_buf_len);
-        }
-
-        client->msg = NULL;
-        client->msg_len = 0;
-    }
-
-    // Header is incomplete...
-    if (client->msg_buf_len < 3) {
-        return 0;
-    }
-
-    uint8_t version = client->msg_buf[0];
-
-    if (version != 0) {
-        printf("ERROR: Unsupported protocol version: %d\n", version);
-        return -1;
-    }
-
-    uint16_t len = (client->msg_buf[1] << 8) | client->msg_buf[2];
-
-    // Message is incomplete...
-    if (client->msg_buf_len < 3 + len) {
-        return 0;
-    }
-
-    client->msg = &client->msg_buf[3];
-    client->msg_len = len;
-
-    *msg = client->msg;
-
-    return client->msg_len;
-}
-
-bool send_msg(struct client *client, void *msg, size_t len)
-{
-    uint8_t buf[3];
-
-    buf[0] = 0;
-    buf[1] = (len & 0xff00) >> 8;
-    buf[2] = len & 0x00ff;
-
-    if (write(client->sock, &buf, 3) < 3) {
-        return false;
-    }
-
-    if (write(client->sock, msg, len) < len) {
-        return false;
-    }
-
-    return true;
-}
-
-bool send_ack_msg(struct client *client)
-{
-    uint8_t buf[1];
-
-    buf[0] = MSG_TYPE_ACK;
-
-    return send_msg(client, &buf, 1);
-}
-
-bool send_error_msg(struct client *client, uint8_t num, char *text)
-{
-    uint8_t buf[102];
-
-    buf[0] = MSG_TYPE_ERROR;
-    buf[1] = num;
-
-    size_t len = MIN(strlen(text), 100);
-
-    memcpy(&buf[2], text, len);
-
-    len += 2;
-
-    return send_msg(client, &buf, len);
-}
-
-bool send_status_msg(struct client *client, uint8_t dev_addr, uint8_t status, bool solicited)
-{
-    uint8_t buf[4];
-
-    buf[0] = MSG_TYPE_STATUS;
-    buf[1] = dev_addr;
-    buf[2] = status;
-    buf[3] = solicited;
-
-    return send_msg(client, &buf, 4);
-}
-
-bool send_data_msg(struct client *client, uint8_t dev_addr, void *data, size_t count)
-{
-    size_t len = 2;
-
-    if (data != NULL) {
-        len += count;
-    } else {
-        len += 2;
-    }
-
-    uint8_t buf[7];
-
-    buf[0] = 0;
-    buf[1] = (len & 0xff00) >> 8;
-    buf[2] = len & 0x00ff;
-    buf[3] = MSG_TYPE_DATA;
-    buf[4] = dev_addr;
-
-    if (data == NULL) {
-        buf[5] = (count & 0xff00) >> 8;
-        buf[6] = count & 0x00ff;
-    }
-
-    // Now, make len the buffer length.
-    len = (data != NULL) ? 5 : 7;
-
-    if (write(client->sock, &buf, len) < len) {
-        return false;
-    }
-
-    if (data != NULL) {
-        if (write(client->sock, data, count) < count) {
-            return false;
-        }
-    }
-
-    return true;
 }

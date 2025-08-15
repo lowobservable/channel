@@ -37,7 +37,7 @@ int chan_out_open(struct chan_out *out, int mem_fd, char *udmabuf_path, bool fro
 
     out->regs = out->base;
 
-    if ((udmabuf_open(&out->udmabuf, udmabuf_path)) < 0) {
+    if (udmabuf_open(&out->udmabuf, udmabuf_path) < 0) {
         real_unmap(out->base, REGS_SIZE);
 
         return -1;
@@ -216,13 +216,13 @@ ssize_t chan_out_complete(struct chan_out *out, uint8_t cmd, void *buf, size_t c
     }
 
     size_t residual_count = (out->regs[REG_DEVICE_3] & 0xffff0000) >> 16;
-    size_t actual_count = count - residual_count;
+    size_t transfer_count = count - residual_count;
 
     if (CHAN_OUT_IS_RECV_CMD(cmd) && buf != NULL) {
-        udmabuf_copy_from_dma(&out->udmabuf, buf, actual_count);
+        udmabuf_copy_from_dma(&out->udmabuf, buf, transfer_count);
     }
 
-    return actual_count;
+    return transfer_count;
 }
 
 int chan_out_wrap_test(struct chan_out *out, uint32_t driver, uint32_t *receiver)

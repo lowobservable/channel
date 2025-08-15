@@ -5,6 +5,8 @@ Notes, so I don't forget:
 ```
 git clone https://github.com/SDL-Hercules-390/hyperion.git
 cd hyperion
+ln -s /path/to/channel/cxip/cxip_protocol.c
+ln -s /path/to/channel/cxip/cxip_protocol.h
 ln -s /path/to/channel/cxip/hercules/cxip.c
 git apply /path/to/channel/cxip/hercules/hyperion.patch
 ./configure
