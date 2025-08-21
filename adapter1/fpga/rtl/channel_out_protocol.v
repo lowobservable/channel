@@ -23,20 +23,23 @@ module channel_out_protocol (
     // 2222 1111 1111 11
     // 3210 9876 5432 1098 7654 3210
     // ---- ---- ---- ---- ---- ----
-    //    0   1h 0000 0000 0000 0000 - Select Requestor  -> Service | Status | Error
-    // C  1   1h AAAA AAAA CCCC CCCC - Initial Selection -> Status | Error
+    //        1h 0000 0000 0000 0000 - Select Requestor  -> Service | Status | Error
+    //    C   2h AAAA AAAA CCCC CCCC - Initial Selection -> Status | Error
+    //    ^
+    //    +------ Command Chaining
+    //    v
+    //    C   3h                     - Accept Status     -> Ack
+    //        4h                     - Stack Status      -> Ack
     //
-    // C      2h                     - Accept Status     -> Ack
-    // ^---- Chaining (TODO)
-    //        3h                     - Stack Status      -> Ack
-    //
-    //        4h DDDD DDDD           - Send Data         -> Ack
-    //        5h                     - Accept Data       -> Ack
-    //        6h                     - Stop              -> Ack
+    //        5h DDDD DDDD           - Send Data         -> Ack
+    //        6h                     - Accept Data       -> Ack
+    //        7h                     - Stop              -> Ack
     //
     //        dh                     - Interface Disconnect -> Ack
     //        fh                     - Selective Reset   -> Ack
+    // verilator lint_off UNUSEDSIGNAL
     input wire [23:0] in_tdata,
+    // verilator lint_on UNUSEDSIGNAL
     input wire in_tvalid,
     output reg in_tready,
 
@@ -104,6 +107,7 @@ module channel_out_protocol (
     parameter ADDRESS_OUT_SELECT_OUT_DELAY_100_NS = 4; // 400 ns
     parameter HOLD_OUT_DELAY_100_NS = 40; // 4 μs, reduce this for tests
     parameter SUPPRESS_STATUS_DELAY_100_NS = 3; // 250 ns
+    parameter COMMAND_CHAINING_DELAY_100_NS = 3; // 250 ns
     parameter SELECT_OUT_IN_TIMEOUT_100_NS = 144; // 14.4 μs
 
     localparam ERROR_INVALID_IN = 8'h01;
@@ -152,6 +156,7 @@ module channel_out_protocol (
     localparam STATE_ENDING_4 = 38;
     localparam STATE_ENDING_5 = 39;
     localparam STATE_ENDING_6 = 40;
+    localparam STATE_ENDING_7 = 41;
 
     reg [7:0] state = STATE_SYSTEM_RESET;
     reg [7:0] next_state;
@@ -172,6 +177,8 @@ module channel_out_protocol (
     reg next_request;
     reg ending;
     reg next_ending;
+    reg command_chaining;
+    reg next_command_chaining;
     reg [15:0] next_error;
 
     wire bus_in_parity_valid;
@@ -266,6 +273,7 @@ module channel_out_protocol (
         next_connected = 0;
         next_request = a_request_in;
         next_ending = ending;
+        next_command_chaining = command_chaining;
         next_error = error;
 
         // Leave bus out low when idle to reduce driver current.
@@ -304,6 +312,7 @@ module channel_out_protocol (
                 next_suppress_out = suppress_status;
 
                 next_ending = 0;
+                next_command_chaining = 0;
 
                 // TODO: Protocol violation check
 
@@ -311,18 +320,19 @@ module channel_out_protocol (
                 begin
                     next_in_tready = 0;
 
-                    case (in_tdata[23:16])
-                        8'h11: // Initial Selection
+                    case (in_tdata[19:16])
+                        4'h1: // Select Requestor
+                        begin
+                            next_state = STATE_SELECT_REQUESTOR_1;
+                        end
+
+                        4'h2: // Initial Selection
                         begin
                             next_address = in_tdata[15:8];
                             next_command = in_tdata[7:0];
+                            next_command_chaining = in_tdata[20];
 
                             next_state = STATE_INITIAL_SELECTION_1;
-                        end
-
-                        8'h01: // Select Requestor
-                        begin
-                            next_state = STATE_SELECT_REQUESTOR_1;
                         end
 
                         default:
@@ -347,7 +357,7 @@ module channel_out_protocol (
                 next_operational_out = 1;
                 next_hold_out = burst && burst_valid;
                 next_select_out = burst && burst_valid;
-                next_suppress_out = suppress_status && ending;
+                next_suppress_out = (suppress_status || command_chaining) && ending;
 
                 next_connected = a_operational_in;
 
@@ -355,6 +365,10 @@ module channel_out_protocol (
 
                 if (!a_operational_in)
                 begin
+                    next_hold_out = 0;
+                    next_select_out = 0;
+                    next_suppress_out = suppress_status;
+
                     // if (in_tready && in_tvalid)
                     // begin
                     //     next_in_tready = 0;
@@ -430,6 +444,11 @@ module channel_out_protocol (
                 next_bus_out = address;
                 next_operational_out = 1;
 
+                // SPEC: To ensure that command chaining occurs, 'suppress out'
+                // remains up during the reselection at least until 'operational
+                // in' rises.
+                next_suppress_out = command_chaining;
+
                 if (!a_operational_in && !a_select_in && !a_address_in && !a_status_in && !a_service_in)
                 begin
                     // SPEC: 'Address out' rises at least 250 nanoseconds after
@@ -453,6 +472,7 @@ module channel_out_protocol (
             begin
                 next_bus_out = address;
                 next_operational_out = 1;
+                next_suppress_out = command_chaining;
 
                 if (!a_operational_in && !a_select_in && !a_address_in && !a_status_in && !a_service_in)
                 begin
@@ -474,6 +494,7 @@ module channel_out_protocol (
                 next_bus_out = address;
                 next_operational_out = 1;
                 next_address_out = 1;
+                next_suppress_out = command_chaining;
 
                 if (!a_operational_in && !a_select_in && !a_address_in && !a_status_in && !a_service_in)
                 begin
@@ -499,6 +520,7 @@ module channel_out_protocol (
                 next_hold_out = 1;
                 next_select_out = 1;
                 next_address_out = 1;
+                next_suppress_out = command_chaining;
 
                 if (a_operational_in && !a_select_in && !a_address_in && !a_status_in && !a_service_in)
                 begin
@@ -1099,20 +1121,20 @@ module channel_out_protocol (
                 begin
                     next_in_tready = 0;
 
-                    case (in_tdata[23:16])
-                        8'h04: // Send Data
+                    case (in_tdata[19:16])
+                        4'h5: // Send Data
                         begin
                             next_data = in_tdata[15:8];
 
                             next_state = STATE_DATA_TRANSFER_5;
                         end
 
-                        8'h05: // Accept Data
+                        4'h6: // Accept Data
                         begin
                             next_state = STATE_DATA_TRANSFER_6;
                         end
 
-                        8'h06: // Stop
+                        4'h7: // Stop
                         begin
                             next_state = STATE_DATA_TRANSFER_7;
                         end
@@ -1280,15 +1302,24 @@ module channel_out_protocol (
                 begin
                     next_in_tready = 0;
 
-                    case (in_tdata[23:16])
-                        8'h02: // Accept Status
+                    case (in_tdata[19:16])
+                        4'h3: // Accept Status
                         begin
-                            next_state = STATE_ENDING_5;
+                            next_command_chaining = in_tdata[20];
+
+                            if (in_tdata[20])
+                            begin
+                                next_state = STATE_ENDING_5;
+                            end
+                            else
+                            begin
+                                next_state = STATE_ENDING_6;
+                            end
                         end
 
-                        8'h03: // Stack Status
+                        4'h4: // Stack Status
                         begin
-                            next_state = STATE_ENDING_6;
+                            next_state = STATE_ENDING_7;
                         end
 
                         default:
@@ -1307,7 +1338,34 @@ module channel_out_protocol (
                 next_operational_out = 1;
                 next_hold_out = burst && burst_valid;
                 next_select_out = burst && burst_valid;
+                next_suppress_out = 1;
+
+                next_connected = 1;
+
+                if (a_operational_in && a_status_in && !a_select_in && !a_address_in && !a_service_in)
+                begin
+                    // SPEC: To ensure recognition of command chaining by the
+                    // control unit, 'suppress out' is up at least 250
+                    // nanoseconds before 'service out' rises in response to
+                    // 'status in [...].
+                    if (state_timer == COMMAND_CHAINING_DELAY_100_NS * CLOCKS_PER_100_NS)
+                    begin
+                        next_state = STATE_ENDING_6;
+                    end
+                end
+                else
+                begin
+                    protocol_violation;
+                end
+            end
+
+            STATE_ENDING_6:
+            begin
+                next_operational_out = 1;
+                next_hold_out = burst && burst_valid;
+                next_select_out = burst && burst_valid;
                 next_service_out = 1;
+                next_suppress_out = command_chaining;
 
                 next_connected = 1;
 
@@ -1327,7 +1385,7 @@ module channel_out_protocol (
                 end
             end
 
-            STATE_ENDING_6:
+            STATE_ENDING_7:
             begin
                 next_operational_out = 1;
                 next_hold_out = burst && burst_valid;
@@ -1379,6 +1437,7 @@ module channel_out_protocol (
         connected <= next_connected;
         request <= next_request;
         ending <= next_ending;
+        command_chaining <= next_command_chaining;
         error <= next_error;
 
         a_bus_out <= next_bus_out;

@@ -118,6 +118,11 @@ module axi_mm_channel_out_tb;
     ) cu (
         .clk(clk),
 
+        .mock_busy(cu_mock_busy),
+        .mock_short_busy(cu_mock_short_busy),
+        .mock_request(cu_mock_request),
+        .mock_limit(cu_mock_limit),
+
         .b_bus_in(bus_in),
         .b_bus_in_parity(bus_in_parity),
         .b_bus_out(bus_out),
@@ -152,12 +157,7 @@ module axi_mm_channel_out_tb;
         .a_status_in(1'b0),
         .a_service_in(1'b0),
         .a_service_out(),
-        .a_suppress_out(),
-
-        .mock_busy(cu_mock_busy),
-        .mock_short_busy(cu_mock_short_busy),
-        .mock_request(cu_mock_request),
-        .mock_limit(cu_mock_limit)
+        .a_suppress_out()
     );
 
     initial
@@ -188,6 +188,7 @@ module axi_mm_channel_out_tb;
         test_read_command_cu_stop;
         test_write_command_channel_stop;
         test_write_command_cu_stop;
+        test_command_chaining;
         test_wrap_tester;
 
         $finish;
@@ -770,6 +771,8 @@ module axi_mm_channel_out_tb;
         `assert_low(data[0], "not start pending");
         `assert_equal(data[7:4], 4'h0, "condition code should be started");
 
+        `assert_equal(cu.command, 8'h03, "command should be NOP");
+
         `assert_high(data[15], "status should be pending");
         `assert_equal(data[23:16], 8'h0c, "status should be CE + DE");
 
@@ -785,6 +788,8 @@ module axi_mm_channel_out_tb;
 
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_low(data[15], "not status pending");
+
+        `assert_low(cu.command_chaining, "not command chaining");
 
         $display("END: test_start_immediate_command");
     end
@@ -843,6 +848,8 @@ module axi_mm_channel_out_tb;
         `assert_low(data[0], "not start pending");
         `assert_equal(data[7:4], 4'h0, "condition code should be started");
 
+        `assert_equal(cu.command, 8'h02, "command should be READ");
+
         data = 32'b0;
 
         while (!data[15])
@@ -878,6 +885,8 @@ module axi_mm_channel_out_tb;
 
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_low(data[15], "not status pending");
+
+        `assert_low(cu.command_chaining, "not command chaining");
 
         $display("END: test_read_command_channel_stop");
     end
@@ -936,6 +945,8 @@ module axi_mm_channel_out_tb;
         `assert_low(data[0], "not start pending");
         `assert_equal(data[7:4], 4'h0, "condition code should be started");
 
+        `assert_equal(cu.command, 8'h02, "command should be READ");
+
         data = 32'b0;
 
         while (!data[15])
@@ -971,6 +982,8 @@ module axi_mm_channel_out_tb;
 
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_low(data[15], "not status pending");
+
+        `assert_low(cu.command_chaining, "not command chaining");
 
         $display("END: test_read_command_cu_stop");
     end
@@ -1029,6 +1042,8 @@ module axi_mm_channel_out_tb;
         `assert_low(data[0], "not start pending");
         `assert_equal(data[7:4], 4'h0, "condition code should be started");
 
+        `assert_equal(cu.command, 8'h01, "command should be WRITE");
+
         data = 32'b0;
 
         while (!data[15])
@@ -1065,6 +1080,8 @@ module axi_mm_channel_out_tb;
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_low(data[15], "not status pending");
 
+        `assert_low(cu.command_chaining, "not command chaining");
+
         $display("END: test_write_command_channel_stop");
     end
     endtask
@@ -1092,7 +1109,7 @@ module axi_mm_channel_out_tb;
 
         `assert_equal(resp, 2'b00, "write should be successful");
 
-        // Start WRITE with count 6.
+        // Start WRITE with count 16.
         control_bfm.write(channel.REG_DEVICE_3, 32'h00100001, resp);
 
         `assert_equal(resp, 2'b00, "write should be successful");
@@ -1121,6 +1138,8 @@ module axi_mm_channel_out_tb;
 
         `assert_low(data[0], "not start pending");
         `assert_equal(data[7:4], 4'h0, "condition code should be started");
+
+        `assert_equal(cu.command, 8'h01, "command should be WRITE");
 
         data = 32'b0;
 
@@ -1158,7 +1177,140 @@ module axi_mm_channel_out_tb;
         `assert_equal(resp, 2'b00, "read should be successful");
         `assert_low(data[15], "not status pending");
 
+        `assert_low(cu.command_chaining, "not command chaining");
+
         $display("END: test_write_command_cu_stop");
+    end
+    endtask
+
+    task test_command_chaining;
+        reg [31:0] data;
+        reg [1:0] resp;
+    begin
+        $display("START: test_command_chaining");
+
+        reset;
+
+        cu_mock_busy <= 0;
+        cu_mock_short_busy <= 0;
+        cu_mock_request <= 0;
+        cu_mock_limit <= 6; // CU can provide 6 bytes
+
+        @(posedge clk);
+
+        control_bfm.write(channel.REG_CHANNEL_1, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_1, 32'h1a000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        // Start READ with count 16 and command chaining.
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00100102, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        data = 32'b1;
+
+        while (data[0])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (data[0])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_low(data[0], "not start pending");
+        `assert_equal(data[7:4], 4'h0, "condition code should be started");
+
+        `assert_equal(cu.command, 8'h02, "command should be READ");
+
+        data = 32'b0;
+
+        while (!data[15])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (!data[15])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_high(data[15], "status should be pending");
+        `assert_equal(data[23:16], 8'h0c, "status should be CE + DE");
+
+        `assert_low(channel.subchannel_active, "not subchannel active");
+        `assert_low(channel.device_active, "not device active");
+
+        control_bfm.read(channel.REG_DEVICE_3, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+
+        `assert_equal(data[31:16], 10, "residual count should be 10");
+
+        // Clear the pending status.
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00008000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+        `assert_equal(resp, 2'b00, "read should be successful");
+        `assert_low(data[15], "not status pending");
+
+        `assert_high(cu.command_chaining, "command chaining");
+
+        // Start chained NOP.
+        control_bfm.write(channel.REG_DEVICE_3, 32'h00000203, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_4, 32'h00000000, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        control_bfm.write(channel.REG_DEVICE_2, 32'h00000001, resp);
+
+        `assert_equal(resp, 2'b00, "write should be successful");
+
+        data = 32'b1;
+
+        while (data[0])
+        begin
+            control_bfm.read(channel.REG_DEVICE_2, data, resp);
+
+            `assert_equal(resp, 2'b00, "read should be successful");
+
+            if (data[0])
+            begin
+                repeat (100) @(posedge clk);
+            end
+        end
+
+        `assert_low(data[0], "not start pending");
+        `assert_equal(data[7:4], 4'h0, "condition code should be started");
+
+        `assert_equal(cu.command, 8'h03, "command should be NOP");
+        `assert_high(cu.command_chained, "command should be chained");
+        `assert_low(cu.command_chaining, "not command chaining");
+
+        $display("END: test_command_chaining");
     end
     endtask
 

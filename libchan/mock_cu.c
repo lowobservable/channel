@@ -42,12 +42,14 @@ void mock_cu_arrange(struct mock_cu *mock_cu, bool busy, bool short_busy, bool r
     mock_cu->regs[REG_CONTROL] = (limit << 16) | (request << 3) | (short_busy << 2) | (busy << 1);
 }
 
-bool mock_cu_assert(struct mock_cu *mock_cu, int8_t expected_command, int16_t expected_count)
+bool mock_cu_assert(struct mock_cu *mock_cu, int8_t expected_command, int16_t expected_count, int8_t expected_command_chained, int8_t expected_command_chaining)
 {
     uint32_t status = mock_cu->regs[REG_STATUS];
 
     uint8_t command = (uint8_t) (status >> 8);
     uint16_t count = (uint16_t) (status >> 16);
+    bool command_chained = status & 0x00000002;
+    bool command_chaining = status & 0x00000001;
 
     if (expected_command >= 0 && command != expected_command) {
         printf("ASSERT: expected command = 0x%.2x, actual = 0x%.2x\n", expected_command, command);
@@ -56,6 +58,16 @@ bool mock_cu_assert(struct mock_cu *mock_cu, int8_t expected_command, int16_t ex
 
     if (expected_count >= 0 && count != expected_count) {
         printf("ASSERT: expected count = %d, actual = %d\n", expected_count, count);
+        return false;
+    }
+
+    if (expected_command_chained >= 0 && command_chained != (bool) expected_command_chained) {
+        printf("ASSERT: expected cmd chained = %d, actual = %d\n", (bool) expected_command_chained, command_chained);
+        return false;
+    }
+
+    if (expected_command_chaining >= 0 && command_chaining != (bool) expected_command_chaining) {
+        printf("ASSERT: expected cmd chaining = %d, actual = %d\n", (bool) expected_command_chaining, command_chaining);
         return false;
     }
 

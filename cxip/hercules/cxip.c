@@ -153,7 +153,6 @@ static void cxip_query_device(DEVBLK *dev, char **devclass, int buflen, char *bu
 
 static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U32 count, BYTE prevcode, int ccwseq, BYTE *iobuf, BYTE *more, BYTE *unitstat, U32 *residual)
 {
-    UNREFERENCED(flags);
     UNREFERENCED(chained);
     UNREFERENCED(prevcode);
     UNREFERENCED(ccwseq);
@@ -188,7 +187,17 @@ static void cxip_execute_ccw(DEVBLK *dev, BYTE code, BYTE flags, BYTE chained, U
 
     bool is_send_cmd = code & 0x01;
 
-    if (!cxip_send_start(cxip->sock, cxip->dev_num, code, 0, is_send_cmd ? iobuf : NULL, count)) {
+    uint8_t cxip_flags = 0;
+
+    if (flags & CCW_FLAGS_CC) {
+        cxip_flags |= 0x01;
+    }
+
+    if (chained) {
+        cxip_flags |= 0x02;
+    }
+
+    if (!cxip_send_start(cxip->sock, cxip->dev_num, code, cxip_flags, is_send_cmd ? iobuf : NULL, count)) {
         CXIP_LOG("ERROR: Unable to send start message\n");
         goto error;
     }

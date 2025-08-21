@@ -12,6 +12,9 @@
 #define CHAN_CMD_SENSE_ID       0xe4
 #define CHAN_CMD_NOP            0x03
 
+#define CHAN_START_CHAINED      0x02
+#define CHAN_START_CHAINING     0x01
+
 #define CHAN_STATUS_ATTN        0x80    // Attention
 #define CHAN_STATUS_SM          0x40    // Status Modifier
 #define CHAN_STATUS_CUE         0x20    // Control Unit End

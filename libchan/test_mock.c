@@ -25,6 +25,7 @@ static bool test_exec_reserved_command(struct chan_out *out, struct mock_cu *moc
 static bool test_exec_immediate_command(struct chan_out *out, struct mock_cu *mock_cu);
 static bool test_exec_read_command(char *case_name, struct chan_out *out, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
 static bool test_exec_write_command(char *case_name, struct chan_out *out, uint16_t count, struct mock_cu *mock_cu, uint16_t mock_cu_limit, uint16_t expected_count);
+static bool test_command_chaining(struct chan_out *out, struct mock_cu *mock_cu);
 
 static void buf_arrange(uint8_t *buf, size_t count);
 static bool buf_assert(uint8_t *buf, size_t count);
@@ -67,6 +68,7 @@ int main(void)
     test_exec_write_command("channel_stop", &out, 6, &mock_cu, 16, 6);
     test_exec_write_command("cu_stop", &out, 16, &mock_cu, 6, 6);
     test_exec_read_command("big", &out, 512, &mock_cu, 512, 512);
+    test_command_chaining(&out, &mock_cu);
 
     mock_cu_close(&mock_cu);
 
@@ -375,13 +377,18 @@ bool test_exec_read_command(char *case_name, struct chan_out *out, uint16_t coun
         return false;
     }
 
+    if (status != 0x0c) {
+        printf("FAIL: expected 0x0c status: 0x%.2x\n", status);
+        return false;
+    }
+
     if (!buf_assert(buf, result)) {
         printf("FAIL: data received did not match expected data:\n");
         dump(buf, result);
         return false;
     }
 
-    if (!mock_cu_assert(mock_cu, cmd, expected_count)) {
+    if (!mock_cu_assert(mock_cu, cmd, expected_count, false, false)) {
         printf("FAIL: mock CU assertions failed\n");
         return false;
     }
@@ -416,7 +423,67 @@ bool test_exec_write_command(char *case_name, struct chan_out *out, uint16_t cou
         return false;
     }
 
-    if (!mock_cu_assert(mock_cu, cmd, expected_count)) {
+    if (status != 0x0c) {
+        printf("FAIL: expected 0x0c status: 0x%.2x\n", status);
+        return false;
+    }
+
+    if (!mock_cu_assert(mock_cu, cmd, expected_count, false, false)) {
+        printf("FAIL: mock CU assertions failed\n");
+        return false;
+    }
+
+    printf("PASS\n");
+
+    return true;
+}
+
+bool test_command_chaining(struct chan_out *out, struct mock_cu *mock_cu)
+{
+    printf("TEST: test_command_chaining\n");
+
+    udmabuf_clear(&out->udmabuf, 0);
+
+    mock_cu_arrange(mock_cu, false, false, false, 6);
+
+    chan_out_enable(out);
+    chan_out_config(out, 0xff, true);
+
+    uint8_t buf[1024];
+    uint8_t status;
+
+    // Start READ with count 16 and command chaining.
+    ssize_t result = chan_exec(out, 0xff, 0x02, CHAN_START_CHAINING, buf, 16, &status);
+
+    if (result != 6) {
+        printf("FAIL: expected successful count 6 bytes: %zd\n", result);
+        return false;
+    }
+
+    if (status != 0x0c) {
+        printf("FAIL: expected 0x0c status: 0x%.2x\n", status);
+        return false;
+    }
+
+    if (!mock_cu_assert(mock_cu, 0x02, 6, false, true)) {
+        printf("FAIL: mock CU assertions failed\n");
+        return false;
+    }
+
+    // Start chained NOP.
+    result = chan_exec(out, 0xff, CHAN_CMD_NOP, CHAN_START_CHAINED, NULL, 0, &status);
+
+    if (result != 0) {
+        printf("FAIL: expected successful count 0 bytes: %zd\n", result);
+        return false;
+    }
+
+    if (status != 0x0c) {
+        printf("FAIL: expected 0x0c status: 0x%.2x\n", status);
+        return false;
+    }
+
+    if (!mock_cu_assert(mock_cu, CHAN_CMD_NOP, 0, true, false)) {
         printf("FAIL: mock CU assertions failed\n");
         return false;
     }

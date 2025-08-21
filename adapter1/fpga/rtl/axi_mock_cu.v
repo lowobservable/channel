@@ -88,6 +88,8 @@ module axi_mock_cu (
     reg [15:0] mock_limit;
     wire [7:0] command;
     wire [15:0] count;
+    wire command_chained;
+    wire command_chaining;
 
     always @(posedge aclk)
     begin
@@ -101,7 +103,7 @@ module axi_mock_cu (
                     s_axi_rdata <= { mock_limit, 12'b0, mock_request, mock_short_busy, mock_busy, 1'b0 };
 
                 REG_STATUS:
-                    s_axi_rdata <= { count, command, 8'b0 };
+                    s_axi_rdata <= { count, command, 6'b0, command_chained, command_chaining };
 
                 default:
                     s_axi_rresp <= 2'b10; // SLVERR
@@ -205,6 +207,16 @@ module axi_mock_cu (
         .clk(aclk),
         .reset(~aresetn),
 
+        .mock_busy(mock_busy),
+        .mock_short_busy(mock_short_busy),
+        .mock_request(mock_request),
+        .mock_limit(mock_limit),
+
+        .command(command),
+        .count(count),
+        .command_chained(command_chained),
+        .command_chaining(command_chaining),
+
         .b_bus_in(b_bus_in),
         .b_bus_in_parity(b_bus_in_parity),
         .b_bus_out(b_bus_out),
@@ -239,14 +251,6 @@ module axi_mock_cu (
         .a_status_in(a_status_in),
         .a_service_in(a_service_in),
         .a_service_out(a_service_out),
-        .a_suppress_out(a_suppress_out),
-
-        .mock_busy(mock_busy),
-        .mock_short_busy(mock_short_busy),
-        .mock_request(mock_request),
-        .mock_limit(mock_limit),
-
-        .command(command),
-        .count(count)
+        .a_suppress_out(a_suppress_out)
     );
 endmodule

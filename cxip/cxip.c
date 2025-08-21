@@ -552,6 +552,14 @@ bool handle_start_msg(struct client *client, uint8_t *msg, size_t msg_len, struc
 
     printf("%.4X | %.2X | Start  | %s [Count = %u]", dev->num, dev->addr, chan_fmt_cmd(cmd, fmt_cmd_buf, sizeof(fmt_cmd_buf)), count);
 
+    if (flags & CHAN_START_CHAINED) {
+        printf(" [Chained]");
+    }
+
+    if (flags & CHAN_START_CHAINING) {
+        printf(" [Chaining...]");
+    }
+
     int start_result = chan_out_start(&dev->chan->out, dev->addr, cmd, flags, data, count);
 
     if (start_result == -1) {
@@ -614,7 +622,7 @@ bool handle_dev_status(struct dev *dev, uint8_t status)
         dev->solicited = false;
     }
 
-    printf("%.4X | %.2X | Status | %s %s\n", dev->num, dev->addr, chan_fmt_status(status, fmt_status_buf, sizeof(fmt_status_buf)), solicited ? "[Solicited]" : "");
+    printf("%.4X | %.2X | Status | %s %s\n", dev->num, dev->addr, chan_fmt_status(status, fmt_status_buf, sizeof(fmt_status_buf)), !solicited ? "[Unsolicited]" : "");
 
     return cxip_send_status(sock, dev->num, status, solicited);
 }

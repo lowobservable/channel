@@ -114,6 +114,8 @@ module axi_mm_channel_out (
     reg clear_status_pending;
     reg status_stacked;
     reg [7:0] command;
+    reg command_chained;
+    reg command_chaining;
     reg [15:0] count;
     reg [31:0] storage_address;
     reg start_pending;
@@ -133,7 +135,8 @@ module axi_mm_channel_out (
     // D2:           | SSSS SSSS | PS     BA | CCCC    S <- Start / Start Pending
     //                             ^^     ^^--------------- Active
     //                             ++---------------------- Pending / Stacked
-    // D3: NNNN NNNN | NNNN NNNN |           | CCCC CCCC
+    // D3: NNNN NNNN | NNNN NNNN |        DC | CCCC CCCC
+    //                                    ^^--------------- Command Chained / Chaining
     // D4: AAAA AAAA | AAAA AAAA | AAAA AAAA | AAAA AAAA <- Storage address
     //
     always @(posedge aclk)
@@ -181,7 +184,7 @@ module axi_mm_channel_out (
 
                 REG_DEVICE_3:
                 begin
-                    s_axi_rdata <= { count, 8'b0, command };
+                    s_axi_rdata <= { count, 6'b0, command_chained, command_chaining, command };
                 end
 
                 REG_DEVICE_4:
@@ -304,6 +307,8 @@ module axi_mm_channel_out (
                 begin
                     // TODO: wstrb
                     command <= wdata[7:0];
+                    command_chaining <= wdata[8];
+                    command_chained <= wdata[9];
                     count <= wdata[31:16];
                 end
 
@@ -515,7 +520,7 @@ module axi_mm_channel_out (
                 begin
                     // TODO: channel_burst <= no contention, probably
 
-                    channel_in_tdata <= { 8'h11, device_address, command }; // XXX - Initial Selection
+                    channel_in_tdata <= { 3'b0, command_chained, 4'h2, device_address, command }; // XXX - Initial Selection
                     channel_in_tvalid <= 1;
 
                     if (channel_in_tready && channel_in_tvalid)
@@ -730,7 +735,7 @@ module axi_mm_channel_out (
 
                 CHANNEL_STATE_ACCEPT_STATUS_1:
                 begin
-                    channel_in_tdata <= 24'h020000; // XXX - Accept Status
+                    channel_in_tdata <= { 3'b0, command_chaining, 20'h30000 }; // XXX - Accept Status
                     channel_in_tvalid <= 1;
 
                     if (channel_in_tready && channel_in_tvalid)
@@ -743,7 +748,7 @@ module axi_mm_channel_out (
 
                 CHANNEL_STATE_STACK_STATUS_1:
                 begin
-                    channel_in_tdata <= 24'h030000; // XXX - Stack Status
+                    channel_in_tdata <= 24'h040000; // XXX - Stack Status
                     channel_in_tvalid <= 1;
 
                     if (channel_in_tready && channel_in_tvalid)
@@ -774,7 +779,7 @@ module axi_mm_channel_out (
 
                 CHANNEL_STATE_SEND_DATA_3:
                 begin
-                    channel_in_tdata <= { 8'h04, storage_data_read, 8'h00 }; // XXX - Send Data
+                    channel_in_tdata <= { 8'h05, storage_data_read, 8'h00 }; // XXX - Send Data
                     channel_in_tvalid <= 1;
 
                     if (channel_in_tready && channel_in_tvalid)
@@ -807,7 +812,7 @@ module axi_mm_channel_out (
 
                 CHANNEL_STATE_RECEIVE_DATA_3:
                 begin
-                    channel_in_tdata <= 24'h050000; // XXX - Accept Data
+                    channel_in_tdata <= 24'h060000; // XXX - Accept Data
                     channel_in_tvalid <= 1;
 
                     if (channel_in_tready && channel_in_tvalid)
@@ -822,7 +827,7 @@ module axi_mm_channel_out (
 
                 CHANNEL_STATE_STOP:
                 begin
-                    channel_in_tdata <= 24'h060000; // XXX - Stop
+                    channel_in_tdata <= 24'h070000; // XXX - Stop
                     channel_in_tvalid <= 1;
 
                     if (channel_in_tready && channel_in_tvalid)
@@ -835,7 +840,13 @@ module axi_mm_channel_out (
 
                 CHANNEL_STATE_TEST_IO_1:
                 begin
-                    channel_in_tdata <= { 8'h11, device_address, 8'h00 }; // XXX - Initial Selection
+                    // NOTE: It is not clear to me if command chained should be
+                    // indicated when executing test I/O, it may be moot if
+                    // stacking status resets command chaining.
+                    //
+                    // SPEC: The command-chaining condition [...] is reset
+                    // whenever the I/O device receives [...] stack status [...]
+                    channel_in_tdata <= { 8'h02, device_address, 8'h00 }; // XXX - Initial Selection
                     channel_in_tvalid <= 1;
 
                     if (channel_in_tready && channel_in_tvalid)

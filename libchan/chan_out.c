@@ -165,7 +165,7 @@ int chan_out_start(struct chan_out *out, uint8_t addr, uint8_t cmd, uint8_t flag
         return CHAN_ERR_START_PENDING;
     }
 
-    out->regs[REG_DEVICE_3] = (((uint16_t) count) << 16) | cmd;
+    out->regs[REG_DEVICE_3] = (((uint16_t) count) << 16) | (flags << 8) | cmd;
     out->regs[REG_DEVICE_4] = out->udmabuf.addr;
     out->regs[REG_DEVICE_2] = 0x00000001;
 
@@ -307,6 +307,14 @@ void chan_out_debug(struct chan_out *out)
         } else if (index == 6) {
             printf(" [Cmd = %.2x]", reg & 0x000000ff);
             printf(" [Count = %d]", (int) ((reg & 0xffff0000) >> 16));
+
+            if (reg & 0x00000200) {
+                printf(" [Chained]");
+            }
+
+            if (reg & 0x00000100) {
+                printf(" [Chaining...]");
+            }
         }
 
         printf("\n");

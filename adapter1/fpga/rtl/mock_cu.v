@@ -4,6 +4,16 @@ module mock_cu (
     input wire clk,
     input wire reset,
 
+    input wire mock_busy,
+    input wire mock_short_busy,
+    input wire mock_request, // One-shot, the others aren't just yet...
+    input wire [15:0] mock_limit,
+
+    output reg [7:0] command,
+    output reg [15:0] count,
+    output reg command_chained,
+    output reg command_chaining,
+
     // Parallel Channel "B"...
     output wire [7:0] b_bus_in,
     output wire b_bus_in_parity,
@@ -42,16 +52,7 @@ module mock_cu (
     input wire a_status_in,
     input wire a_service_in,
     output wire a_service_out,
-    output wire a_suppress_out,
-
-    // ...
-    input wire mock_busy,
-    input wire mock_short_busy,
-    input wire mock_request, // One-shot, the others aren't just yet...
-    input wire [15:0] mock_limit,
-
-    output reg [7:0] command,
-    output reg [15:0] count
+    output wire a_suppress_out
 );
     parameter ADDRESS = 8'hff;
 
@@ -194,6 +195,13 @@ module mock_cu (
                             end
                             else
                             begin
+                                command_chained <= command_chaining && suppress_out;
+
+                                if (command_chaining && !suppress_out)
+                                begin
+                                    $display("WARN: Expected suppress out (\"command chained\") to be asserted");
+                                end
+
                                 state <= 2;
                             end
                         end
@@ -403,6 +411,7 @@ module mock_cu (
                     begin
                         if (status[4] || (status[3] && status[2]) || command == 8'h00)
                         begin
+                            command_chaining <= suppress_out;
                             state <= 50;
                         end
                         else if (command == 8'h01 /* WRITE */)
@@ -526,6 +535,7 @@ module mock_cu (
 
                     if (service_out)
                     begin
+                        command_chaining <= suppress_out;
                         status_in <= 0;
                         state <= 50;
                     end
@@ -553,12 +563,18 @@ module mock_cu (
             status_in <= 0;
             service_in <= 0;
             selection_y <= 0;
+
+            command_chained <= 0;
+            command_chaining <= 0;
         end
 
         if (reset)
         begin
             state <= 0;
             status_stacked <= 0;
+
+            command_chained <= 0;
+            command_chaining <= 0;
         end
     end
 endmodule
