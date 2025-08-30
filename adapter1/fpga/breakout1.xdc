@@ -47,3 +47,8 @@ set_property -dict { PACKAGE_PIN U19 IOSTANDARD LVCMOS33 } [get_ports { DRIVER_E
 
 set_property -dict { PACKAGE_PIN L17 IOSTANDARD LVCMOS33 } [get_ports { GPIO_0 }]; # GPIO 0
 set_property -dict { PACKAGE_PIN M20 IOSTANDARD LVCMOS33 } [get_ports { GPIO_1 }]; # GPIO 1
+
+set_property -dict { PACKAGE_PIN V13 IOSTANDARD LVCMOS33 } [get_ports { J3_3 }];
+set_property -dict { PACKAGE_PIN U12 IOSTANDARD LVCMOS33 } [get_ports { J3_4 }];
+set_property -dict { PACKAGE_PIN V15 IOSTANDARD LVCMOS33 } [get_ports { J5_3 }];
+set_property -dict { PACKAGE_PIN V12 IOSTANDARD LVCMOS33 } [get_ports { J5_4 }];

@@ -90,6 +90,10 @@ module axi_mm_channel_out (
     output reg [19:0] wrap_tester_driver,
     input wire [19:0] wrap_tester_receiver,
 
+    output wire indicator_operational,
+    output wire indicator_connected,
+    output wire indicator_error,
+
     output wire debug_0,
     output wire debug_1
 );
@@ -956,6 +960,10 @@ module axi_mm_channel_out (
         .m_axi_bready(m_axi_bready)
     );
 
-    assign debug_0 = frontend_enable;
-    assign debug_1 = channel_connected;
+    assign indicator_operational = channel_enable;
+    assign indicator_connected = channel_connected;
+    assign indicator_error = channel_error[0];
+
+    assign debug_0 = 0;
+    assign debug_1 = 0;
 endmodule
