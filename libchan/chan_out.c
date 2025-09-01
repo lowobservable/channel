@@ -23,7 +23,7 @@
 #define CHAN_OUT_IS_SEND_CMD(C) ((C) & 0x01)
 #define CHAN_OUT_IS_RECV_CMD(C) (!((C) & 0x01))
 
-int chan_out_open(struct chan_out *out, int mem_fd, char *udmabuf_path, bool frontend_enable)
+int chan_out_open(struct chan_out *out, int mem_fd, char *udmabuf_path, bool ignore_state)
 {
     if (out == NULL) {
         return CHAN_ERR_ARGS;
@@ -43,20 +43,26 @@ int chan_out_open(struct chan_out *out, int mem_fd, char *udmabuf_path, bool fro
         return -1;
     }
 
-    out->regs[REG_CHANNEL_1] = false;
-    out->regs[REG_CHANNEL_3] = frontend_enable;
+    if (chan_out_is_enabled(out) && !ignore_state) {
+        udmabuf_close(&out->udmabuf);
+        real_unmap(out->base, REGS_SIZE);
+
+        return CHAN_ERR_CHANNEL_STATE;
+    }
 
     return 0;
 }
 
-int chan_out_close(struct chan_out *out)
+int chan_out_close(struct chan_out *out, bool reset)
 {
     if (out == NULL) {
         return CHAN_ERR_ARGS;
     }
 
-    out->regs[REG_CHANNEL_1] = false;
-    out->regs[REG_CHANNEL_3] = false;
+    if (reset) {
+        out->regs[REG_CHANNEL_1] = false;
+        out->regs[REG_CHANNEL_3] = false;
+    }
 
     int result = 0;
 
@@ -71,29 +77,28 @@ int chan_out_close(struct chan_out *out)
     return result;
 }
 
-int chan_out_enable(struct chan_out *out)
+bool chan_out_is_enabled(struct chan_out *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+
+    return (out->regs[REG_CHANNEL_1] & 0x00000001);
+}
+
+int chan_out_config(struct chan_out *out, bool enable, bool frontend_enable)
 {
     if (out == NULL) {
         return CHAN_ERR_ARGS;
     }
 
-    out->regs[REG_CHANNEL_1] = true;
+    out->regs[REG_CHANNEL_1] = enable;
+    out->regs[REG_CHANNEL_3] = frontend_enable;
 
     return 0;
 }
 
-int chan_out_disable(struct chan_out *out)
-{
-    if (out == NULL) {
-        return CHAN_ERR_ARGS;
-    }
-
-    out->regs[REG_CHANNEL_1] = false;
-
-    return 0;
-}
-
-int chan_out_config(struct chan_out *out, uint8_t addr, bool enable)
+int chan_out_dev_config(struct chan_out *out, uint8_t addr, bool enable)
 {
     if (out == NULL) {
         return CHAN_ERR_ARGS;
@@ -137,6 +142,10 @@ int chan_out_start(struct chan_out *out, uint8_t addr, uint8_t cmd, uint8_t flag
 {
     if (out == NULL) {
         return CHAN_ERR_ARGS;
+    }
+
+    if (!chan_out_is_enabled(out)) {
+        return CHAN_ERR_CHANNEL_STATE;
     }
 
     // TODO: This would not apply if a skip flag is implemented.
@@ -232,7 +241,7 @@ int chan_out_wrap_test(struct chan_out *out, uint32_t driver, uint32_t *receiver
     }
 
     // Channel must not be enabled during wrap test.
-    if (out->regs[REG_CHANNEL_1] & 0x00000001) {
+    if (chan_out_is_enabled(out)) {
         return CHAN_ERR_CHANNEL_STATE;
     }
 

@@ -56,6 +56,7 @@ struct state {
     struct client clients[CLIENTS_MAX];
 };
 
+static void usage(char *cmd);
 static bool serve(int listen_sock, struct chan *chan, struct dev *dev);
 
 static bool handle_connect(int sock, struct client **client, struct state *state);
@@ -69,7 +70,7 @@ static struct dev *find_dev(struct state *state, int num);
 static struct client *find_client(struct state *state, int sock);
 static bool close_client(struct client *client, struct state *state);
 
-static void usage(char *cmd);
+static bool parse_dev_num(char *str, uint16_t *num);
 static bool parse_dev_config(char *config, uint16_t *num, uint8_t *addr);
 
 int main(int argc, char **argv)
@@ -112,7 +113,7 @@ int main(int argc, char **argv)
     uint8_t dev_addr;
 
     if (!parse_dev_config(dev_config, &dev_num, &dev_addr)) {
-        printf("Device config invalid: %s\n", argv[optind]);
+        printf("Invalid device config: %s\n", argv[optind]);
         return EXIT_FAILURE;
     }
 
@@ -160,13 +161,13 @@ int main(int argc, char **argv)
 
     struct chan chan;
 
-    int result = chan_out_open(&chan.out, mem_fd, "udmabuf0", frontend_enable);
+    int result = chan_out_open(&chan.out, mem_fd, "udmabuf0", false);
 
     if (result == -1) {
         perror("chan_open");
         return EXIT_FAILURE;
     } else if (result < -1) {
-        printf("chan_open error: %d\n", result);
+        printf("chan_out_open error: %d\n", result);
         return EXIT_FAILURE;
     }
 
@@ -184,7 +185,7 @@ int main(int argc, char **argv)
 
     printf("Device number %.4X configured for address %.2X\n", dev.num, dev.addr);
 
-    chan_out_enable(&chan.out);
+    chan_out_config(&chan.out, true, frontend_enable);
 
     struct mock_cu mock_cu;
 
@@ -208,7 +209,7 @@ int main(int argc, char **argv)
         mock_cu_close(&mock_cu);
     }
 
-    chan_out_close(&chan.out);
+    chan_out_close(&chan.out, true);
 
     free(chan.recv_buf);
 
@@ -216,6 +217,11 @@ int main(int argc, char **argv)
     close(mem_fd);
 
     return (success ? EXIT_SUCCESS : EXIT_FAILURE);
+}
+
+void usage(char *cmd)
+{
+    printf("Usage: %s [-lm] nnnn[:aa]\n", cmd);
 }
 
 volatile bool stop = false;
@@ -481,7 +487,7 @@ bool handle_msg(struct client *client, uint8_t *msg, size_t msg_len, struct stat
             return cxip_send_error(client->sock, 0, "Device already open");
         }
 
-        chan_out_config(&dev->chan->out, dev->addr, true);
+        chan_out_dev_config(&dev->chan->out, dev->addr, true);
 
         printf("%.4X | %.2X | Open   |\n", dev->num, dev->addr);
 
@@ -501,7 +507,7 @@ bool handle_msg(struct client *client, uint8_t *msg, size_t msg_len, struct stat
             return cxip_send_error(client->sock, 0, "Device not open");
         }
 
-        chan_out_config(&dev->chan->out, dev->addr, false);
+        chan_out_dev_config(&dev->chan->out, dev->addr, false);
 
         printf("%.4X | %.2X | Close  |\n", dev->num, dev->addr);
 
@@ -654,7 +660,7 @@ bool close_client(struct client *client, struct state *state)
     if (state->dev != NULL && state->dev->client == client) {
         struct dev *dev = state->dev;
 
-        chan_out_config(&dev->chan->out, dev->addr, false);
+        chan_out_dev_config(&dev->chan->out, dev->addr, false);
 
         dev->client = NULL;
     }
@@ -674,9 +680,41 @@ bool close_client(struct client *client, struct state *state)
     return true;
 }
 
-void usage(char *cmd)
+bool parse_dev_num(char *str, uint16_t *num)
 {
-    printf("Usage: %s [-lm] nnnn[:aa]\n", cmd);
+    if (str == NULL) {
+        return false;
+    }
+
+    size_t digits = 0;
+
+    for (size_t index = 0; index < strlen(str); index++) {
+        if (isblank(str[index])) {
+            continue;
+        }
+
+        if (!isxdigit(str[index])) {
+            return false;
+        }
+
+        if (++digits > 4) {
+            return false;
+        }
+    }
+
+    char *end;
+
+    errno = 0;
+
+    unsigned long value = strtol(str, &end, 16);
+
+    if (errno != 0 || *end != '\0') {
+        return false;
+    }
+
+    *num = (uint16_t) value;
+
+    return true;
 }
 
 bool parse_dev_config(char *config, uint16_t *num, uint8_t *addr)
@@ -692,38 +730,16 @@ bool parse_dev_config(char *config, uint16_t *num, uint8_t *addr)
         return false;
     }
 
-    for (int element = 0; element < 2; element++) {
-        for (size_t index = 0; index < strlen(token); index++) {
-            if (!(isxdigit(token[index]) || isblank(token[index]))) {
-                return false;
-            }
-        }
-
-        char *end;
-
-        errno = 0;
-
-        unsigned long value = strtol(token, &end, 16);
-
-        if (errno != 0 || *end != '\0') {
-            return false;
-        }
-
-        if (element == 0 && value <= 0xffff) {
-            *num = (uint16_t) value;
-            *addr = (uint8_t) (value & 0xff);
-        } else if (element == 1 && value <= 0xff) {
-            *addr = (uint8_t) (value & 0xff);
-        } else {
-            return false;
-        }
-
-        if (strlen(rest) == 0) {
-            break;
-        }
-
-        token = rest;
+    if (!parse_dev_num(token, num)) {
+        return false;
     }
 
-    return true;
+    if (strlen(rest) == 0) {
+        *addr = (uint8_t) (*num & 0xff);
+        return true;
+    }
+
+    token = rest;
+
+    return chan_parse_dev_addr(token, addr);
 }

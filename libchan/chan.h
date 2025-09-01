@@ -36,6 +36,9 @@
 #define CHAN_ERR_STATUS_PENDING -8      // Status pending
 #define CHAN_ERR_CMD_RESERVED   -9      // Reserved command
 #define CHAN_ERR_DMA_SIZE       -10     // DMA buffer limit
+#define CHAN_ERR_EXEC_STATUS    -11     // Unexpected status
+#define CHAN_ERR_EXEC_COUNT     -12     // Unexpected count
+#define CHAN_ERR_EXEC_DATA      -13     // Unexpected data
 
 struct chan_out {
     uintptr_t base_addr;
@@ -44,15 +47,15 @@ struct chan_out {
     struct udmabuf udmabuf;
 };
 
-int chan_out_open(struct chan_out *out, int mem_fd, char *udmabuf_path, bool frontend_enable);
+int chan_out_open(struct chan_out *out, int mem_fd, char *udmabuf_path, bool ignore_state);
 
-int chan_out_close(struct chan_out *out);
+int chan_out_close(struct chan_out *out, bool reset);
 
-int chan_out_enable(struct chan_out *out);
+bool chan_out_is_enabled(struct chan_out *out);
 
-int chan_out_disable(struct chan_out *out);
+int chan_out_config(struct chan_out *out, bool enable, bool frontend_enable);
 
-int chan_out_config(struct chan_out *out, uint8_t addr, bool enable);
+int chan_out_dev_config(struct chan_out *out, uint8_t addr, bool enable);
 
 int chan_out_test(struct chan_out *out, uint8_t addr, uint8_t *status);
 
@@ -71,6 +74,8 @@ ssize_t chan_exec_basic_sense(struct chan_out *out, uint8_t addr, void *buf, siz
 ssize_t chan_exec_sense_id(struct chan_out *out, uint8_t addr, void *buf, size_t count, uint8_t *status);
 
 int chan_exec_nop(struct chan_out *out, uint8_t addr, uint8_t *status);
+
+bool chan_parse_dev_addr(char *str, uint8_t *addr);
 
 char *chan_fmt_status(uint8_t status, char *buf, size_t size);
 

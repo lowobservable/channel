@@ -1,13 +1,13 @@
 CFLAGS = -Wall -I../libchan -I../libhack
 
-all: channel
+all: chan
 
-channel: channel.c ../libchan/libchan.a ../libhack/libhack.a
+chan: chan.c ../libchan/libchan.a ../libhack/libhack.a
 
 lint:
 	cppcheck --enable=all --check-level=exhaustive --std=c11 --suppress=missingIncludeSystem *.c *.h
 
 clean:
-	rm -f channel
+	rm -f chan
 
 .PHONY: all lint clean

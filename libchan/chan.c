@@ -1,8 +1,12 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <ctype.h>
+#include <errno.h>
 
 #include "chan.h"
 
@@ -47,6 +51,10 @@ ssize_t chan_exec(struct chan_out *out, uint8_t addr, uint8_t cmd, uint8_t flags
         *status = cumulative_status;
     }
 
+    if (cumulative_status != (CHAN_STATUS_CE | CHAN_STATUS_DE)) {
+        return CHAN_ERR_EXEC_STATUS;
+    }
+
     return chan_out_complete(out, cmd, buf, count);
 }
 
@@ -60,7 +68,17 @@ ssize_t chan_exec_basic_sense(struct chan_out *out, uint8_t addr, void *buf, siz
         return CHAN_ERR_ARGS;
     }
 
-    return chan_exec(out, addr, CHAN_CMD_BASIC_SENSE, 0, buf, count, status);
+    ssize_t result = chan_exec(out, addr, CHAN_CMD_BASIC_SENSE, 0, buf, count, status);
+
+    if (result < 0) {
+        return result;
+    }
+
+    if (result < 1) {
+        return CHAN_ERR_EXEC_COUNT;
+    }
+
+    return result;
 }
 
 ssize_t chan_exec_sense_id(struct chan_out *out, uint8_t addr, void *buf, size_t count, uint8_t *status)
@@ -80,13 +98,13 @@ ssize_t chan_exec_sense_id(struct chan_out *out, uint8_t addr, void *buf, size_t
     }
 
     if (result < 4) {
-        return -1;
+        return CHAN_ERR_EXEC_COUNT;
     }
 
     uint8_t *p = buf;
 
     if (p[0] != 0xff) {
-        return -1;
+        return CHAN_ERR_EXEC_DATA;
     }
 
     return result;
@@ -101,10 +119,47 @@ int chan_exec_nop(struct chan_out *out, uint8_t addr, uint8_t *status)
     }
 
     if (result != 0) {
-        return -1;
+        return CHAN_ERR_EXEC_COUNT;
     }
 
     return 0;
+}
+
+bool chan_parse_dev_addr(char *str, uint8_t *addr)
+{
+    if (str == NULL) {
+        return false;
+    }
+
+    size_t digits = 0;
+
+    for (size_t index = 0; index < strlen(str); index++) {
+        if (isblank(str[index])) {
+            continue;
+        }
+
+        if (!isxdigit(str[index])) {
+            return false;
+        }
+
+        if (++digits > 2) {
+            return false;
+        }
+    }
+
+    char *end;
+
+    errno = 0;
+
+    unsigned long value = strtol(str, &end, 16);
+
+    if (errno != 0 || *end != '\0') {
+        return false;
+    }
+
+    *addr = (uint8_t) value;
+
+    return true;
 }
 
 char *chan_fmt_status(uint8_t status, char *buf, size_t size)
@@ -223,7 +278,7 @@ char *chan_fmt_cmd(uint8_t cmd, char *buf, size_t size)
         p += sprintf(p, "*");
     }
 
-    p += sprintf(p, ">");
+    sprintf(p, ">");
 
     return buf;
 }
